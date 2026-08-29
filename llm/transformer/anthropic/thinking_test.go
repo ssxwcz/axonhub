@@ -177,7 +177,7 @@ func TestReasoningEffortToThinking(t *testing.T) {
 			name:            "high reasoning effort",
 			reasoningEffort: "high",
 			expectedType:    "enabled",
-			expectedBudget:  30000,
+			expectedBudget:  16000,
 			config:          nil,
 		},
 		{
@@ -375,7 +375,7 @@ func TestInboundTransformer_ThinkingTransform(t *testing.T) {
 					BudgetTokens: 30000,
 				},
 			},
-			expectedEffort: "high",
+			expectedEffort: "xhigh",
 		},
 		{
 			name: "thinking disabled",
@@ -520,8 +520,15 @@ func TestThinkingBudgetToReasoningEffort(t *testing.T) {
 		{"low budget boundary", 5001, "medium"},
 		{"medium budget", 15000, "medium"},
 		{"medium budget boundary", 15001, "high"},
-		{"high budget", 30000, "high"},
-		{"very high budget", 100000, "high"},
+		// Anthropic-protocol clients (e.g. opencode via the AI SDK) encode "high"
+		// as ~16000 thinking tokens and "max" as ~32000.
+		{"high budget", 16000, "high"},
+		{"high budget upper boundary", 20000, "high"},
+		{"xhigh budget", 20001, "xhigh"},
+		{"xhigh budget upper boundary", 31000, "xhigh"},
+		{"max budget boundary", 31001, "max"},
+		{"max budget", 31999, "max"},
+		{"very high budget", 100000, "max"},
 	}
 
 	for _, tt := range tests {
@@ -1503,4 +1510,31 @@ func TestOutboundConvert_RedactedThinkingToAnthropicCompatiblePlatformKeepsEncod
 	require.Equal(t, "thinking", anthropicReq.Messages[1].Content.MultipleContent[0].Type)
 	require.NotNil(t, anthropicReq.Messages[1].Content.MultipleContent[0].Signature)
 	require.Equal(t, encodedSignature, *anthropicReq.Messages[1].Content.MultipleContent[0].Signature)
+}
+
+func TestReasoningEffortBudgetRoundTrip(t *testing.T) {
+	// An effort converted to a budget must convert back to the same effort. If it
+	// does not, a request crossing the Anthropic protocol silently downgrades the
+	// requested reasoning level (for example "max" becoming "high").
+	for _, effort := range []string{"low", "medium", "high", "xhigh", "max"} {
+		t.Run(effort, func(t *testing.T) {
+			budget := getThinkingBudgetTokensWithConfig(effort, nil)
+
+			require.Equal(t, effort, thinkingBudgetToReasoningEffort(budget))
+		})
+	}
+}
+
+func TestDefaultReasoningEffortMappingDistinctBudgets(t *testing.T) {
+	// Distinct budgets are what make effort levels differ upstream: collapsing
+	// them made "high", "xhigh" and "max" think for exactly as long.
+	seen := make(map[int64]string, len(defaultReasoningEffortMapping))
+
+	for effort, budget := range defaultReasoningEffortMapping {
+		if previous, exists := seen[budget]; exists {
+			t.Fatalf("effort %q shares budget %d with %q", effort, budget, previous)
+		}
+
+		seen[budget] = effort
+	}
 }

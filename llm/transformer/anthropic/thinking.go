@@ -31,25 +31,42 @@ func supportsOutputConfig(config *Config) bool {
 	}
 }
 
-// thinkingBudgetToReasoningEffort converts thinking budget tokens to reasoning effort string.
+// thinkingBudgetToReasoningEffort converts thinking budget tokens to a reasoning
+// effort string.
+//
+// The buckets are the inverse of defaultReasoningEffortMapping, so an effort that
+// is converted to a budget and back resolves to the same level. The high and max
+// boundaries follow what clients actually put on the wire: Anthropic-protocol
+// clients (for example opencode through the AI SDK) encode "high" as ~16000
+// thinking tokens and "max" as ~32000. Bucketing everything above 20000 as "high"
+// silently downgraded those clients' "max" to "high".
 func thinkingBudgetToReasoningEffort(budgetTokens int64) string {
-	// Map budget tokens to reasoning effort based on the same logic used in outbound
-	if budgetTokens <= 5000 {
+	switch {
+	case budgetTokens <= 5000:
 		return "low"
-	} else if budgetTokens <= 15000 {
+	case budgetTokens <= 15000:
 		return "medium"
-	} else {
+	case budgetTokens <= 20000:
 		return "high"
+	case budgetTokens <= 31000:
+		return "xhigh"
+	default:
+		return "max"
 	}
 }
 
 // getDefaultReasoningEffortMapping returns the default mapping from ReasoningEffort to thinking budget tokens.
+//
+// Each level maps to a distinct budget so that a higher effort really thinks
+// longer. Values must stay inside the matching bucket of
+// thinkingBudgetToReasoningEffort, otherwise a round trip through the wire would
+// downgrade the effort level.
 var defaultReasoningEffortMapping = map[string]int64{
 	"low":    5000,
 	"medium": 15000,
-	"high":   30000,
-	"xhigh":  30000,
-	"max":    30000,
+	"high":   16000,
+	"xhigh":  24000,
+	"max":    31999,
 }
 
 // getThinkingBudgetTokensWithConfig returns the thinking budget tokens for a given reasoning effort with config.
