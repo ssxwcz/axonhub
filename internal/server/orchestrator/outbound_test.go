@@ -472,13 +472,17 @@ func TestSelectOutboundForCandidate(t *testing.T) {
 	primaryOutbound := &mockTransformer{apiFormat: llm.APIFormatOpenAIChatCompletion}
 	embeddingOutbound := &mockTransformer{apiFormat: llm.APIFormatOpenAIEmbedding}
 
+	selectOutbound := func(candidate *ChannelModelsCandidate) transformer.Outbound {
+		return selectOutboundForCandidate(candidate, candidateFirstEntry(candidate), nil)
+	}
+
 	t.Run("nil candidate returns nil", func(t *testing.T) {
-		require.Nil(t, selectOutboundForCandidate(nil))
+		require.Nil(t, selectOutbound(nil))
 	})
 
 	t.Run("candidate with nil channel returns nil", func(t *testing.T) {
 		candidate := &ChannelModelsCandidate{APIFormat: llm.APIFormatOpenAIEmbedding.String()}
-		require.Nil(t, selectOutboundForCandidate(candidate))
+		require.Nil(t, selectOutbound(candidate))
 	})
 
 	t.Run("api format set and found in outbounds returns matching outbound", func(t *testing.T) {
@@ -491,7 +495,7 @@ func TestSelectOutboundForCandidate(t *testing.T) {
 			Channel:   channel,
 			APIFormat: llm.APIFormatOpenAIEmbedding.String(),
 		}
-		require.Same(t, embeddingOutbound, selectOutboundForCandidate(candidate))
+		require.Same(t, embeddingOutbound, selectOutbound(candidate))
 	})
 
 	t.Run("api format set but not in outbounds falls back to channel outbound", func(t *testing.T) {
@@ -504,7 +508,7 @@ func TestSelectOutboundForCandidate(t *testing.T) {
 			Channel:   channel,
 			APIFormat: llm.APIFormatOpenAIEmbedding.String(),
 		}
-		require.Same(t, primaryOutbound, selectOutboundForCandidate(candidate))
+		require.Same(t, primaryOutbound, selectOutbound(candidate))
 	})
 
 	t.Run("nil outbounds falls back to channel outbound", func(t *testing.T) {
@@ -516,7 +520,7 @@ func TestSelectOutboundForCandidate(t *testing.T) {
 			Channel:   channel,
 			APIFormat: llm.APIFormatOpenAIEmbedding.String(),
 		}
-		require.Same(t, primaryOutbound, selectOutboundForCandidate(candidate))
+		require.Same(t, primaryOutbound, selectOutbound(candidate))
 	})
 
 	t.Run("empty api format falls back to channel outbound", func(t *testing.T) {
@@ -529,7 +533,7 @@ func TestSelectOutboundForCandidate(t *testing.T) {
 			Channel:   channel,
 			APIFormat: "",
 		}
-		require.Same(t, primaryOutbound, selectOutboundForCandidate(candidate))
+		require.Same(t, primaryOutbound, selectOutbound(candidate))
 	})
 }
 

@@ -357,9 +357,14 @@ func shouldForceStreamingForCandidate(candidate *ChannelModelsCandidate, req *ll
 	return supportsAutoAggregateRequest(req)
 }
 
-func selectOutboundForCandidate(candidate *ChannelModelsCandidate) transformer.Outbound {
+func selectOutboundForCandidate(candidate *ChannelModelsCandidate, entry biz.ChannelModelEntry, req *llm.Request) transformer.Outbound {
 	if candidate == nil || candidate.Channel == nil {
 		return nil
+	}
+
+	// Model-level (api_format, path) overrides win over the channel endpoint.
+	if out, ok := selectModelConfigOutbound(candidate, entry, req); ok {
+		return out
 	}
 
 	if candidate.APIFormat != "" && candidate.Channel.Outbounds != nil {
@@ -397,7 +402,9 @@ func (p *PersistentOutboundTransformer) TransformRequest(ctx context.Context, ll
 	p.state.CurrentCandidate = candidate
 	p.state.StreamCompleted = false
 
-	p.wrapped = selectOutboundForCandidate(candidate)
+	modelConfig := channelModelConfigForEntry(candidate, entry)
+
+	p.wrapped = selectOutboundForCandidate(candidate, entry, llmRequest)
 
 	log.Debug(ctx, "using candidate",
 		log.String("channel", candidate.Channel.Name),
@@ -409,12 +416,15 @@ func (p *PersistentOutboundTransformer) TransformRequest(ctx context.Context, ll
 	llmRequest.Model = entry.ActualModel
 
 	outboundFormat := p.wrapped.APIFormat()
-	if candidate.APIFormat != "" {
+	if !modelConfigHasEndpointOverride(modelConfig) && candidate.APIFormat != "" {
 		outboundFormat = llm.APIFormat(candidate.APIFormat)
 	}
 
 	// Apply channel transform options to create a new request
 	llmRequest = applyTransformOptions(llmRequest, candidate.Channel.Settings)
+	// Apply per-model config (reasoning defaults / force-disable) after channel
+	// transform options and before the outbound transformer and middlewares.
+	llmRequest = applyChannelModelConfig(llmRequest, modelConfig)
 	for _, middleware := range p.outboundLlmRequestMiddlewares {
 		transformedRequest, err := middleware.OnOutboundLlmRequest(ctx, llmRequest, outboundFormat)
 		if err != nil {
@@ -594,7 +604,7 @@ func (p *PersistentOutboundTransformer) NextChannel(ctx context.Context) error {
 
 	candidate := p.state.ChannelModelsCandidates[p.state.CurrentCandidateIndex]
 	p.state.CurrentCandidate = candidate
-	p.wrapped = selectOutboundForCandidate(candidate)
+	p.wrapped = selectOutboundForCandidate(candidate, candidateFirstEntry(candidate), p.state.LlmRequest)
 
 	if log.DebugEnabled(ctx) {
 		model := candidate.Models[0].ActualModel
@@ -688,7 +698,8 @@ func (p *PersistentOutboundTransformer) PrepareForRetry(ctx context.Context) err
 	if p.state.CurrentModelIndex+1 < len(candidate.Models) {
 		// Increase the model index to the next model.
 		p.state.CurrentModelIndex++
-		p.wrapped = selectOutboundForCandidate(candidate)
+		entry := candidate.Models[p.state.CurrentModelIndex]
+		p.wrapped = selectOutboundForCandidate(candidate, entry, p.state.LlmRequest)
 
 		if log.DebugEnabled(ctx) {
 			model := candidate.Models[p.state.CurrentModelIndex].ActualModel

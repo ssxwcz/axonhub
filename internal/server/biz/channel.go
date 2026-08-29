@@ -54,6 +54,12 @@ type Channel struct {
 	// Populated from the channel's resolved default endpoints. Keyed by api_format string value.
 	Outbounds map[string]transformer.Outbound
 
+	// ModelConfigOutbounds caches outbound transformers for model-level
+	// (api_format, path) overrides from settings.modelConfigs. Keyed by
+	// ModelConfigOutboundKey(apiFormat, path). Built once when the channel
+	// cache is populated, so the request path never constructs transformers.
+	ModelConfigOutbounds map[string]transformer.Outbound
+
 	// HTTPClient is the custom HTTP client for this channel with proxy support
 	HTTPClient *httpclient.HttpClient
 
@@ -561,6 +567,10 @@ func (svc *ChannelService) createChannel(ctx context.Context, input ent.CreateCh
 		if err := NormalizeRetryableErrorPatterns(input.Settings); err != nil {
 			return nil, err
 		}
+
+		if err := NormalizeModelConfigs(input.Settings); err != nil {
+			return nil, err
+		}
 	}
 
 	if input.Endpoints != nil {
@@ -695,6 +705,108 @@ func NormalizeRetryableErrorPatterns(settings *objects.ChannelSettings) error {
 	}
 
 	settings.RetryableErrorPatterns = patterns
+
+	return nil
+}
+
+// modelConfigReasoningEfforts lists the reasoning effort values accepted by
+// per-model configurations. "none" disables reasoning via the effort field.
+var modelConfigReasoningEfforts = map[string]struct{}{
+	"low":    {},
+	"medium": {},
+	"high":   {},
+	"xhigh":  {},
+	"max":    {},
+	"none":   {},
+}
+
+// NormalizeModelConfigs validates and canonicalizes per-model channel
+// configurations before they are persisted. Entries without any effective
+// override are dropped so partial UI updates cannot accumulate no-op rows.
+func NormalizeModelConfigs(settings *objects.ChannelSettings) error {
+	if settings == nil || len(settings.ModelConfigs) == 0 {
+		return nil
+	}
+
+	configs := make([]objects.ChannelModelConfig, 0, len(settings.ModelConfigs))
+	seen := make(map[string]struct{}, len(settings.ModelConfigs))
+
+	for i := range settings.ModelConfigs {
+		cfg := settings.ModelConfigs[i]
+		cfg.Model = strings.TrimSpace(cfg.Model)
+		if cfg.Model == "" {
+			return fmt.Errorf("model config %d: model is required", i+1)
+		}
+
+		if _, ok := seen[cfg.Model]; ok {
+			return fmt.Errorf("model config %d: duplicate model %q", i+1, cfg.Model)
+		}
+
+		cfg.APIFormat = strings.TrimSpace(cfg.APIFormat)
+		if cfg.APIFormat != "" {
+			if _, ok := SupportedAPIFormats[cfg.APIFormat]; !ok {
+				return fmt.Errorf("model config %d: unsupported api_format %q", i+1, cfg.APIFormat)
+			}
+		}
+
+		cfg.Path = strings.TrimSpace(cfg.Path)
+		if cfg.Path != "" {
+			if strings.HasPrefix(cfg.Path, "http://") || strings.HasPrefix(cfg.Path, "https://") {
+				return fmt.Errorf("model config %d: path must not be a full URL, got %q", i+1, cfg.Path)
+			}
+
+			if !strings.HasPrefix(cfg.Path, "/") {
+				return fmt.Errorf("model config %d: path must start with '/', got %q", i+1, cfg.Path)
+			}
+		}
+
+		if cfg.Reasoning != nil {
+			cfg.Reasoning.DefaultEffort = strings.TrimSpace(cfg.Reasoning.DefaultEffort)
+			if cfg.Reasoning.DefaultEffort != "" {
+				if _, ok := modelConfigReasoningEfforts[cfg.Reasoning.DefaultEffort]; !ok {
+					return fmt.Errorf("model config %d: unsupported default reasoning effort %q", i+1, cfg.Reasoning.DefaultEffort)
+				}
+			}
+
+			if cfg.Reasoning.DefaultBudget != nil && *cfg.Reasoning.DefaultBudget <= 0 {
+				return fmt.Errorf("model config %d: default reasoning budget must be positive", i+1)
+			}
+
+			if cfg.Reasoning.EffortMap != nil {
+				for key, target := range cfg.Reasoning.EffortMap {
+					if _, ok := modelConfigReasoningEfforts[key]; !ok {
+						return fmt.Errorf("model config %d: unsupported effort map key %q", i+1, key)
+					}
+					if target != nil {
+						*target = strings.TrimSpace(*target)
+						if _, ok := modelConfigReasoningEfforts[*target]; !ok {
+							return fmt.Errorf("model config %d: unsupported effort map value %q for key %q", i+1, *target, key)
+						}
+					}
+				}
+				if len(cfg.Reasoning.EffortMap) == 0 {
+					cfg.Reasoning.EffortMap = nil
+				}
+			}
+
+			if cfg.Reasoning.IsEmpty() {
+				cfg.Reasoning = nil
+			}
+		}
+
+		if cfg.IsEmpty() {
+			continue
+		}
+
+		seen[cfg.Model] = struct{}{}
+		configs = append(configs, cfg)
+	}
+
+	if len(configs) == 0 {
+		settings.ModelConfigs = nil
+	} else {
+		settings.ModelConfigs = configs
+	}
 
 	return nil
 }
@@ -843,6 +955,10 @@ func (svc *ChannelService) UpdateChannel(ctx context.Context, id int, input *ent
 		}
 
 		if err := NormalizeRetryableErrorPatterns(input.Settings); err != nil {
+			return nil, err
+		}
+
+		if err := NormalizeModelConfigs(input.Settings); err != nil {
 			return nil, err
 		}
 	}

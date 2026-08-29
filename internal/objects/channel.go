@@ -39,6 +39,81 @@ type ModelMapping struct {
 	To string `json:"to"`
 }
 
+// ModelReasoningConfig configures reasoning behavior for a single model
+// within a channel.
+type ModelReasoningConfig struct {
+	// Enabled controls reasoning for the model.
+	//   nil  = follow the request (default)
+	//   true = same as nil, kept for explicitness in the UI
+	//   false = force-disable reasoning: the outbound request is sent
+	//           without any reasoning effort/budget, overriding values
+	//           derived from the request or model-level defaults.
+	Enabled *bool `json:"enabled,omitempty"`
+
+	// DefaultEffort fills the request's reasoning effort only when the
+	// request did not specify one (neither effort nor budget), including
+	// values derived from the auto reasoning effort model suffix.
+	// One of "low", "medium", "high", "xhigh", "max".
+	DefaultEffort string `json:"defaultEffort,omitempty"`
+
+	// DefaultBudget fills the request's reasoning budget only when the
+	// request did not specify one. Expressed in tokens, e.g. Anthropic's
+	// thinking budget_tokens.
+	DefaultBudget *int64 `json:"defaultBudget,omitempty"`
+
+	// EffortMap maps an incoming reasoning effort to the value actually
+	// sent upstream, following cc-switch's thinkingLevelMap philosophy:
+	//   - string value -> the effort sent to the provider (rename or
+	//     downgrade, e.g. "max" -> "xhigh" when the model caps below max)
+	//   - null value   -> that effort is explicitly unsupported: reasoning
+	//     is cleared so nothing reaches the provider for it
+	//   - missing key  -> pass through unchanged
+	// Sparse by design: entries exist only for the efforts an admin wants
+	// to override; there is no automatic inference or chained downgrade.
+	EffortMap EffortMap `json:"effortMap,omitempty"`
+}
+
+// IsEmpty reports whether the reasoning config carries no effective setting.
+func (r *ModelReasoningConfig) IsEmpty() bool {
+	if r == nil {
+		return true
+	}
+
+	return (r.Enabled == nil || *r.Enabled) && r.DefaultEffort == "" && r.DefaultBudget == nil && len(r.EffortMap) == 0
+}
+
+// ChannelModelConfig holds per-model custom configuration inside a channel.
+// It is matched by the actual model name sent to the provider (ActualModel),
+// so all request aliases (mappings, prefixes, auto-trim) of one upstream
+// model share the same configuration.
+type ChannelModelConfig struct {
+	// Model is the actual model name sent to the provider.
+	Model string `json:"model"`
+
+	// APIFormat optionally overrides the outbound API format for the model,
+	// e.g. serving one model through the anthropic protocol on an otherwise
+	// OpenAI-compatible channel. Empty keeps the channel's selected format.
+	APIFormat string `json:"api_format,omitempty"`
+
+	// Path optionally overrides the endpoint path for the model. When set
+	// together with APIFormat, the path applies to that format; when set
+	// alone, it applies to the format the channel would otherwise select.
+	// Must start with "/". Empty keeps the channel endpoint's path.
+	Path string `json:"path,omitempty"`
+
+	// Reasoning optionally configures reasoning behavior for the model.
+	Reasoning *ModelReasoningConfig `json:"reasoning,omitempty"`
+}
+
+// IsEmpty reports whether the model config carries no effective override.
+func (c *ChannelModelConfig) IsEmpty() bool {
+	if c == nil {
+		return true
+	}
+
+	return c.APIFormat == "" && c.Path == "" && c.Reasoning.IsEmpty()
+}
+
 type HeaderEntry struct {
 	Key   string `json:"key"`
 	Value string `json:"value"`
@@ -208,6 +283,29 @@ type ChannelSettings struct {
 	// trigger retry for this channel. When Regex is false, Pattern is matched as a
 	// case-sensitive substring of the error text.
 	RetryableErrorPatterns []RetryableErrorPattern `json:"retryableErrorPatterns,omitempty"`
+
+	// ModelConfigs holds per-model custom configurations for models inside the
+	// channel, matched by the actual model name sent to the provider. It enables
+	// protocol (api format) overrides, endpoint path overrides, and reasoning
+	// defaults on a per-model basis. Models without an entry keep the channel's
+	// default behavior.
+	ModelConfigs []ChannelModelConfig `json:"modelConfigs,omitempty"`
+}
+
+// GetModelConfig returns the per-model configuration for the given actual
+// model name (the name sent to the provider), or nil when none is configured.
+func (s *ChannelSettings) GetModelConfig(actualModel string) *ChannelModelConfig {
+	if s == nil || actualModel == "" || len(s.ModelConfigs) == 0 {
+		return nil
+	}
+
+	for i := range s.ModelConfigs {
+		if s.ModelConfigs[i].Model == actualModel {
+			return &s.ModelConfigs[i]
+		}
+	}
+
+	return nil
 }
 
 type RetryableErrorPattern struct {

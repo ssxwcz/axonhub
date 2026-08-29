@@ -203,6 +203,10 @@ func (svc *ChannelService) buildChannelWithOutbounds(c *ent.Channel, apiKeyOverr
 	userEndpoints := c.Endpoints
 
 	if len(defaultEndpoints) == 0 && len(userEndpoints) == 0 {
+		if err := svc.buildModelConfigOutbounds(c, ch); err != nil {
+			return nil, err
+		}
+
 		return ch, nil
 	}
 
@@ -237,12 +241,104 @@ func (svc *ChannelService) buildChannelWithOutbounds(c *ent.Channel, apiKeyOverr
 	}
 
 	if len(outbounds) == 0 {
+		if err := svc.buildModelConfigOutbounds(c, ch); err != nil {
+			return nil, err
+		}
+
 		return ch, nil
 	}
 
 	ch.Outbounds = outbounds
 
+	if err := svc.buildModelConfigOutbounds(c, ch); err != nil {
+		return nil, err
+	}
+
 	return ch, nil
+}
+
+// ModelConfigOutboundKey builds the cache key for a model-level outbound
+// override. An empty path means "the format's default path".
+func ModelConfigOutboundKey(apiFormat, path string) string {
+	return apiFormat + "\x00" + path
+}
+
+// buildModelConfigOutbounds pre-builds outbound transformers for every
+// model-level (api_format, path) override in settings.modelConfigs.
+//
+// Resolution rules at request time:
+//   - APIFormat set, Path empty: the channel's endpoint outbound for that
+//     format wins when present; otherwise the default-path outbound built
+//     here is used.
+//   - APIFormat set, Path set: an outbound bound to that exact path.
+//   - APIFormat empty, Path set: an outbound per channel endpoint format,
+//     bound to that path, so the override follows whichever format the
+//     channel selects for the request.
+func (svc *ChannelService) buildModelConfigOutbounds(c *ent.Channel, ch *Channel) error {
+	if c.Settings == nil || len(c.Settings.ModelConfigs) == 0 {
+		return nil
+	}
+
+	modelConfigOutbounds := make(map[string]transformer.Outbound)
+
+	build := func(apiFormat, path string) error {
+		key := ModelConfigOutboundKey(apiFormat, path)
+		if _, exists := modelConfigOutbounds[key]; exists {
+			return nil
+		}
+
+		out, err := svc.buildNonDefaultEndpointOutbound(c, ch, objects.ChannelEndpoint{
+			APIFormat: apiFormat,
+			Path:      path,
+		})
+		if err != nil {
+			return fmt.Errorf("failed to build model config outbound for api_format %q (path %q) on channel %s: %w", apiFormat, path, c.Name, err)
+		}
+
+		modelConfigOutbounds[key] = out
+
+		return nil
+	}
+
+	channelFormats := make([]string, 0, len(ch.Outbounds))
+	for apiFormat := range ch.Outbounds {
+		channelFormats = append(channelFormats, apiFormat)
+	}
+
+	for i := range c.Settings.ModelConfigs {
+		cfg := c.Settings.ModelConfigs[i]
+		if cfg.APIFormat != "" {
+			// When no custom path is set and the channel already exposes an
+			// endpoint for the format, the endpoint's own outbound is used
+			// (including its path); no extra transformer is needed.
+			if cfg.Path == "" {
+				if _, ok := ch.Outbounds[cfg.APIFormat]; ok {
+					continue
+				}
+			}
+
+			if err := build(cfg.APIFormat, cfg.Path); err != nil {
+				return err
+			}
+
+			continue
+		}
+
+		// Path-only override: applies to every format the channel can select.
+		if cfg.Path != "" {
+			for _, apiFormat := range channelFormats {
+				if err := build(apiFormat, cfg.Path); err != nil {
+					return err
+				}
+			}
+		}
+	}
+
+	if len(modelConfigOutbounds) > 0 {
+		ch.ModelConfigOutbounds = modelConfigOutbounds
+	}
+
+	return nil
 }
 
 func endpointTransport(ep objects.ChannelEndpoint) string {
