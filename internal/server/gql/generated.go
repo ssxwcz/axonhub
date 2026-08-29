@@ -423,6 +423,13 @@ type ComplexityRoot struct {
 		Frequency func(childComplexity int) int
 	}
 
+	ChannelModelConfig struct {
+		APIFormat func(childComplexity int) int
+		Model     func(childComplexity int) int
+		Path      func(childComplexity int) int
+		Reasoning func(childComplexity int) int
+	}
+
 	ChannelModelEntry struct {
 		ActualModel  func(childComplexity int) int
 		RequestModel func(childComplexity int) int
@@ -567,6 +574,7 @@ type ComplexityRoot struct {
 		HideMappedModels         func(childComplexity int) int
 		HideOriginalModels       func(childComplexity int) int
 		LowercaseModelID         func(childComplexity int) int
+		ModelConfigs             func(childComplexity int) int
 		ModelMappings            func(childComplexity int) int
 		PassThroughBody          func(childComplexity int) int
 		PassThroughUserAgent     func(childComplexity int) int
@@ -923,6 +931,13 @@ type ComplexityRoot struct {
 		ItemCode                 func(childComplexity int) int
 		Pricing                  func(childComplexity int) int
 		PromptWriteCacheVariants func(childComplexity int) int
+	}
+
+	ModelReasoningConfig struct {
+		DefaultBudget func(childComplexity int) int
+		DefaultEffort func(childComplexity int) int
+		EffortMap     func(childComplexity int) int
+		Enabled       func(childComplexity int) int
 	}
 
 	ModelSettings struct {
@@ -3777,6 +3792,31 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.complexity.ChannelModelAutoSyncSetting.Frequency(childComplexity), true
 
+	case "ChannelModelConfig.apiFormat":
+		if e.complexity.ChannelModelConfig.APIFormat == nil {
+			break
+		}
+
+		return e.complexity.ChannelModelConfig.APIFormat(childComplexity), true
+	case "ChannelModelConfig.model":
+		if e.complexity.ChannelModelConfig.Model == nil {
+			break
+		}
+
+		return e.complexity.ChannelModelConfig.Model(childComplexity), true
+	case "ChannelModelConfig.path":
+		if e.complexity.ChannelModelConfig.Path == nil {
+			break
+		}
+
+		return e.complexity.ChannelModelConfig.Path(childComplexity), true
+	case "ChannelModelConfig.reasoning":
+		if e.complexity.ChannelModelConfig.Reasoning == nil {
+			break
+		}
+
+		return e.complexity.ChannelModelConfig.Reasoning(childComplexity), true
+
 	case "ChannelModelEntry.actualModel":
 		if e.complexity.ChannelModelEntry.ActualModel == nil {
 			break
@@ -4329,6 +4369,12 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.ChannelSettings.LowercaseModelID(childComplexity), true
+	case "ChannelSettings.modelConfigs":
+		if e.complexity.ChannelSettings.ModelConfigs == nil {
+			break
+		}
+
+		return e.complexity.ChannelSettings.ModelConfigs(childComplexity), true
 	case "ChannelSettings.modelMappings":
 		if e.complexity.ChannelSettings.ModelMappings == nil {
 			break
@@ -5591,6 +5637,31 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.ModelPriceItem.PromptWriteCacheVariants(childComplexity), true
+
+	case "ModelReasoningConfig.defaultBudget":
+		if e.complexity.ModelReasoningConfig.DefaultBudget == nil {
+			break
+		}
+
+		return e.complexity.ModelReasoningConfig.DefaultBudget(childComplexity), true
+	case "ModelReasoningConfig.defaultEffort":
+		if e.complexity.ModelReasoningConfig.DefaultEffort == nil {
+			break
+		}
+
+		return e.complexity.ModelReasoningConfig.DefaultEffort(childComplexity), true
+	case "ModelReasoningConfig.effortMap":
+		if e.complexity.ModelReasoningConfig.EffortMap == nil {
+			break
+		}
+
+		return e.complexity.ModelReasoningConfig.EffortMap(childComplexity), true
+	case "ModelReasoningConfig.enabled":
+		if e.complexity.ModelReasoningConfig.Enabled == nil {
+			break
+		}
+
+		return e.complexity.ModelReasoningConfig.Enabled(childComplexity), true
 
 	case "ModelSettings.associations":
 		if e.complexity.ModelSettings.Associations == nil {
@@ -11559,6 +11630,7 @@ func (e *executableSchema) Exec(ctx context.Context) graphql.ResponseHandler {
 		ec.unmarshalInputChannelCredentialsInput,
 		ec.unmarshalInputChannelEndpointInput,
 		ec.unmarshalInputChannelModelAssociationInput,
+		ec.unmarshalInputChannelModelConfigInput,
 		ec.unmarshalInputChannelModelPriceOrder,
 		ec.unmarshalInputChannelModelPriceVersionOrder,
 		ec.unmarshalInputChannelModelPriceVersionWhereInput,
@@ -11629,6 +11701,7 @@ func (e *executableSchema) Exec(ctx context.Context) graphql.ResponseHandler {
 		ec.unmarshalInputModelOrder,
 		ec.unmarshalInputModelPriceInput,
 		ec.unmarshalInputModelPriceItemInput,
+		ec.unmarshalInputModelReasoningConfigInput,
 		ec.unmarshalInputModelSettingsInput,
 		ec.unmarshalInputModelWhereInput,
 		ec.unmarshalInputOAuthCredentialsInput,
@@ -20506,6 +20579,8 @@ func (ec *executionContext) fieldContext_Channel_settings(_ context.Context, fie
 				return ec.fieldContext_ChannelSettings_retryableStatusCodes(ctx, field)
 			case "retryableErrorPatterns":
 				return ec.fieldContext_ChannelSettings_retryableErrorPatterns(ctx, field)
+			case "modelConfigs":
+				return ec.fieldContext_ChannelSettings_modelConfigs(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type ChannelSettings", field.Name)
 		},
@@ -21836,6 +21911,132 @@ func (ec *executionContext) fieldContext_ChannelModelAutoSyncSetting_frequency(_
 		IsResolver: false,
 		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
 			return nil, errors.New("field of type AutoSyncFrequency does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _ChannelModelConfig_model(ctx context.Context, field graphql.CollectedField, obj *objects.ChannelModelConfig) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_ChannelModelConfig_model,
+		func(ctx context.Context) (any, error) {
+			return obj.Model, nil
+		},
+		nil,
+		ec.marshalNString2string,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_ChannelModelConfig_model(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "ChannelModelConfig",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _ChannelModelConfig_apiFormat(ctx context.Context, field graphql.CollectedField, obj *objects.ChannelModelConfig) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_ChannelModelConfig_apiFormat,
+		func(ctx context.Context) (any, error) {
+			return obj.APIFormat, nil
+		},
+		nil,
+		ec.marshalOString2string,
+		true,
+		false,
+	)
+}
+
+func (ec *executionContext) fieldContext_ChannelModelConfig_apiFormat(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "ChannelModelConfig",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _ChannelModelConfig_path(ctx context.Context, field graphql.CollectedField, obj *objects.ChannelModelConfig) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_ChannelModelConfig_path,
+		func(ctx context.Context) (any, error) {
+			return obj.Path, nil
+		},
+		nil,
+		ec.marshalOString2string,
+		true,
+		false,
+	)
+}
+
+func (ec *executionContext) fieldContext_ChannelModelConfig_path(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "ChannelModelConfig",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _ChannelModelConfig_reasoning(ctx context.Context, field graphql.CollectedField, obj *objects.ChannelModelConfig) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_ChannelModelConfig_reasoning,
+		func(ctx context.Context) (any, error) {
+			return obj.Reasoning, nil
+		},
+		nil,
+		ec.marshalOModelReasoningConfig2ᚖgithubᚗcomᚋloopljᚋaxonhubᚋinternalᚋobjectsᚐModelReasoningConfig,
+		true,
+		false,
+	)
+}
+
+func (ec *executionContext) fieldContext_ChannelModelConfig_reasoning(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "ChannelModelConfig",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "enabled":
+				return ec.fieldContext_ModelReasoningConfig_enabled(ctx, field)
+			case "defaultEffort":
+				return ec.fieldContext_ModelReasoningConfig_defaultEffort(ctx, field)
+			case "defaultBudget":
+				return ec.fieldContext_ModelReasoningConfig_defaultBudget(ctx, field)
+			case "effortMap":
+				return ec.fieldContext_ModelReasoningConfig_effortMap(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type ModelReasoningConfig", field.Name)
 		},
 	}
 	return fc, nil
@@ -25151,6 +25352,45 @@ func (ec *executionContext) fieldContext_ChannelSettings_retryableErrorPatterns(
 				return ec.fieldContext_RetryableErrorPattern_regex(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type RetryableErrorPattern", field.Name)
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _ChannelSettings_modelConfigs(ctx context.Context, field graphql.CollectedField, obj *objects.ChannelSettings) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_ChannelSettings_modelConfigs,
+		func(ctx context.Context) (any, error) {
+			return obj.ModelConfigs, nil
+		},
+		nil,
+		ec.marshalOChannelModelConfig2ᚕgithubᚗcomᚋloopljᚋaxonhubᚋinternalᚋobjectsᚐChannelModelConfigᚄ,
+		true,
+		false,
+	)
+}
+
+func (ec *executionContext) fieldContext_ChannelSettings_modelConfigs(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "ChannelSettings",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "model":
+				return ec.fieldContext_ChannelModelConfig_model(ctx, field)
+			case "apiFormat":
+				return ec.fieldContext_ChannelModelConfig_apiFormat(ctx, field)
+			case "path":
+				return ec.fieldContext_ChannelModelConfig_path(ctx, field)
+			case "reasoning":
+				return ec.fieldContext_ChannelModelConfig_reasoning(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type ChannelModelConfig", field.Name)
 		},
 	}
 	return fc, nil
@@ -31269,6 +31509,122 @@ func (ec *executionContext) fieldContext_ModelPriceItem_promptWriteCacheVariants
 				return ec.fieldContext_PromptWriteCacheVariant_pricing(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type PromptWriteCacheVariant", field.Name)
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _ModelReasoningConfig_enabled(ctx context.Context, field graphql.CollectedField, obj *objects.ModelReasoningConfig) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_ModelReasoningConfig_enabled,
+		func(ctx context.Context) (any, error) {
+			return obj.Enabled, nil
+		},
+		nil,
+		ec.marshalOBoolean2ᚖbool,
+		true,
+		false,
+	)
+}
+
+func (ec *executionContext) fieldContext_ModelReasoningConfig_enabled(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "ModelReasoningConfig",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Boolean does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _ModelReasoningConfig_defaultEffort(ctx context.Context, field graphql.CollectedField, obj *objects.ModelReasoningConfig) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_ModelReasoningConfig_defaultEffort,
+		func(ctx context.Context) (any, error) {
+			return obj.DefaultEffort, nil
+		},
+		nil,
+		ec.marshalOString2string,
+		true,
+		false,
+	)
+}
+
+func (ec *executionContext) fieldContext_ModelReasoningConfig_defaultEffort(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "ModelReasoningConfig",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _ModelReasoningConfig_defaultBudget(ctx context.Context, field graphql.CollectedField, obj *objects.ModelReasoningConfig) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_ModelReasoningConfig_defaultBudget,
+		func(ctx context.Context) (any, error) {
+			return obj.DefaultBudget, nil
+		},
+		nil,
+		ec.marshalOInt2ᚖint64,
+		true,
+		false,
+	)
+}
+
+func (ec *executionContext) fieldContext_ModelReasoningConfig_defaultBudget(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "ModelReasoningConfig",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Int does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _ModelReasoningConfig_effortMap(ctx context.Context, field graphql.CollectedField, obj *objects.ModelReasoningConfig) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_ModelReasoningConfig_effortMap,
+		func(ctx context.Context) (any, error) {
+			return obj.EffortMap, nil
+		},
+		nil,
+		ec.marshalOEffortMap2githubᚗcomᚋloopljᚋaxonhubᚋinternalᚋobjectsᚐEffortMap,
+		true,
+		false,
+	)
+}
+
+func (ec *executionContext) fieldContext_ModelReasoningConfig_effortMap(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "ModelReasoningConfig",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type EffortMap does not have child fields")
 		},
 	}
 	return fc, nil
@@ -65425,6 +65781,54 @@ func (ec *executionContext) unmarshalInputChannelModelAssociationInput(ctx conte
 	return it, nil
 }
 
+func (ec *executionContext) unmarshalInputChannelModelConfigInput(ctx context.Context, obj any) (objects.ChannelModelConfig, error) {
+	var it objects.ChannelModelConfig
+	asMap := map[string]any{}
+	for k, v := range obj.(map[string]any) {
+		asMap[k] = v
+	}
+
+	fieldsInOrder := [...]string{"model", "apiFormat", "path", "reasoning"}
+	for _, k := range fieldsInOrder {
+		v, ok := asMap[k]
+		if !ok {
+			continue
+		}
+		switch k {
+		case "model":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("model"))
+			data, err := ec.unmarshalNString2string(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.Model = data
+		case "apiFormat":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("apiFormat"))
+			data, err := ec.unmarshalOString2string(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.APIFormat = data
+		case "path":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("path"))
+			data, err := ec.unmarshalOString2string(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.Path = data
+		case "reasoning":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("reasoning"))
+			data, err := ec.unmarshalOModelReasoningConfigInput2ᚖgithubᚗcomᚋloopljᚋaxonhubᚋinternalᚋobjectsᚐModelReasoningConfig(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.Reasoning = data
+		}
+	}
+
+	return it, nil
+}
+
 func (ec *executionContext) unmarshalInputChannelModelPriceOrder(ctx context.Context, obj any) (ent.ChannelModelPriceOrder, error) {
 	var it ent.ChannelModelPriceOrder
 	asMap := map[string]any{}
@@ -68026,7 +68430,7 @@ func (ec *executionContext) unmarshalInputChannelSettingsInput(ctx context.Conte
 		asMap[k] = v
 	}
 
-	fieldsInOrder := [...]string{"extraModelPrefix", "modelMappings", "autoTrimedModelPrefixes", "hideOriginalModels", "hideMappedModels", "lowercaseModelId", "proxy", "transformOptions", "headerOverrideOperations", "bodyOverrideOperations", "passThroughUserAgent", "passThroughBody", "rateLimit", "retryableStatusCodes", "retryableErrorPatterns"}
+	fieldsInOrder := [...]string{"extraModelPrefix", "modelMappings", "autoTrimedModelPrefixes", "hideOriginalModels", "hideMappedModels", "lowercaseModelId", "proxy", "transformOptions", "headerOverrideOperations", "bodyOverrideOperations", "passThroughUserAgent", "passThroughBody", "rateLimit", "retryableStatusCodes", "retryableErrorPatterns", "modelConfigs"}
 	for _, k := range fieldsInOrder {
 		v, ok := asMap[k]
 		if !ok {
@@ -68138,6 +68542,13 @@ func (ec *executionContext) unmarshalInputChannelSettingsInput(ctx context.Conte
 				return it, err
 			}
 			it.RetryableErrorPatterns = data
+		case "modelConfigs":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("modelConfigs"))
+			data, err := ec.unmarshalOChannelModelConfigInput2ᚕgithubᚗcomᚋloopljᚋaxonhubᚋinternalᚋobjectsᚐChannelModelConfigᚄ(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.ModelConfigs = data
 		}
 	}
 
@@ -72626,6 +73037,54 @@ func (ec *executionContext) unmarshalInputModelPriceItemInput(ctx context.Contex
 				return it, err
 			}
 			it.PromptWriteCacheVariants = data
+		}
+	}
+
+	return it, nil
+}
+
+func (ec *executionContext) unmarshalInputModelReasoningConfigInput(ctx context.Context, obj any) (objects.ModelReasoningConfig, error) {
+	var it objects.ModelReasoningConfig
+	asMap := map[string]any{}
+	for k, v := range obj.(map[string]any) {
+		asMap[k] = v
+	}
+
+	fieldsInOrder := [...]string{"enabled", "defaultEffort", "defaultBudget", "effortMap"}
+	for _, k := range fieldsInOrder {
+		v, ok := asMap[k]
+		if !ok {
+			continue
+		}
+		switch k {
+		case "enabled":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("enabled"))
+			data, err := ec.unmarshalOBoolean2ᚖbool(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.Enabled = data
+		case "defaultEffort":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("defaultEffort"))
+			data, err := ec.unmarshalOString2string(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.DefaultEffort = data
+		case "defaultBudget":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("defaultBudget"))
+			data, err := ec.unmarshalOInt2ᚖint64(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.DefaultBudget = data
+		case "effortMap":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("effortMap"))
+			data, err := ec.unmarshalOEffortMapInput2githubᚗcomᚋloopljᚋaxonhubᚋinternalᚋobjectsᚐEffortMap(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.EffortMap = data
 		}
 	}
 
@@ -92637,6 +93096,51 @@ func (ec *executionContext) _ChannelModelAutoSyncSetting(ctx context.Context, se
 	return out
 }
 
+var channelModelConfigImplementors = []string{"ChannelModelConfig"}
+
+func (ec *executionContext) _ChannelModelConfig(ctx context.Context, sel ast.SelectionSet, obj *objects.ChannelModelConfig) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, channelModelConfigImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("ChannelModelConfig")
+		case "model":
+			out.Values[i] = ec._ChannelModelConfig_model(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "apiFormat":
+			out.Values[i] = ec._ChannelModelConfig_apiFormat(ctx, field, obj)
+		case "path":
+			out.Values[i] = ec._ChannelModelConfig_path(ctx, field, obj)
+		case "reasoning":
+			out.Values[i] = ec._ChannelModelConfig_reasoning(ctx, field, obj)
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.deferred, int32(len(deferred)))
+
+	for label, dfs := range deferred {
+		ec.processDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
 var channelModelEntryImplementors = []string{"ChannelModelEntry"}
 
 func (ec *executionContext) _ChannelModelEntry(ctx context.Context, sel ast.SelectionSet, obj *biz.ChannelModelEntry) graphql.Marshaler {
@@ -94186,6 +94690,8 @@ func (ec *executionContext) _ChannelSettings(ctx context.Context, sel ast.Select
 			out.Values[i] = ec._ChannelSettings_retryableStatusCodes(ctx, field, obj)
 		case "retryableErrorPatterns":
 			out.Values[i] = ec._ChannelSettings_retryableErrorPatterns(ctx, field, obj)
+		case "modelConfigs":
+			out.Values[i] = ec._ChannelSettings_modelConfigs(ctx, field, obj)
 		default:
 			panic("unknown field " + strconv.Quote(field.Name))
 		}
@@ -96940,6 +97446,48 @@ func (ec *executionContext) _ModelPriceItem(ctx context.Context, sel ast.Selecti
 			}
 		case "promptWriteCacheVariants":
 			out.Values[i] = ec._ModelPriceItem_promptWriteCacheVariants(ctx, field, obj)
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.deferred, int32(len(deferred)))
+
+	for label, dfs := range deferred {
+		ec.processDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
+var modelReasoningConfigImplementors = []string{"ModelReasoningConfig"}
+
+func (ec *executionContext) _ModelReasoningConfig(ctx context.Context, sel ast.SelectionSet, obj *objects.ModelReasoningConfig) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, modelReasoningConfigImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("ModelReasoningConfig")
+		case "enabled":
+			out.Values[i] = ec._ModelReasoningConfig_enabled(ctx, field, obj)
+		case "defaultEffort":
+			out.Values[i] = ec._ModelReasoningConfig_defaultEffort(ctx, field, obj)
+		case "defaultBudget":
+			out.Values[i] = ec._ModelReasoningConfig_defaultBudget(ctx, field, obj)
+		case "effortMap":
+			out.Values[i] = ec._ModelReasoningConfig_effortMap(ctx, field, obj)
 		default:
 			panic("unknown field " + strconv.Quote(field.Name))
 		}
@@ -110906,6 +111454,15 @@ func (ec *executionContext) marshalNChannelModelAutoSyncSetting2githubᚗcomᚋl
 	return ec._ChannelModelAutoSyncSetting(ctx, sel, &v)
 }
 
+func (ec *executionContext) marshalNChannelModelConfig2githubᚗcomᚋloopljᚋaxonhubᚋinternalᚋobjectsᚐChannelModelConfig(ctx context.Context, sel ast.SelectionSet, v objects.ChannelModelConfig) graphql.Marshaler {
+	return ec._ChannelModelConfig(ctx, sel, &v)
+}
+
+func (ec *executionContext) unmarshalNChannelModelConfigInput2githubᚗcomᚋloopljᚋaxonhubᚋinternalᚋobjectsᚐChannelModelConfig(ctx context.Context, v any) (objects.ChannelModelConfig, error) {
+	res, err := ec.unmarshalInputChannelModelConfigInput(ctx, v)
+	return res, graphql.ErrorOnPath(ctx, err)
+}
+
 func (ec *executionContext) marshalNChannelModelEntry2githubᚗcomᚋloopljᚋaxonhubᚋinternalᚋserverᚋbizᚐChannelModelEntry(ctx context.Context, sel ast.SelectionSet, v biz.ChannelModelEntry) graphql.Marshaler {
 	return ec._ChannelModelEntry(ctx, sel, &v)
 }
@@ -117321,6 +117878,71 @@ func (ec *executionContext) unmarshalOChannelModelAssociationInput2ᚖgithubᚗc
 	return &res, graphql.ErrorOnPath(ctx, err)
 }
 
+func (ec *executionContext) marshalOChannelModelConfig2ᚕgithubᚗcomᚋloopljᚋaxonhubᚋinternalᚋobjectsᚐChannelModelConfigᚄ(ctx context.Context, sel ast.SelectionSet, v []objects.ChannelModelConfig) graphql.Marshaler {
+	if v == nil {
+		return graphql.Null
+	}
+	ret := make(graphql.Array, len(v))
+	var wg sync.WaitGroup
+	isLen1 := len(v) == 1
+	if !isLen1 {
+		wg.Add(len(v))
+	}
+	for i := range v {
+		i := i
+		fc := &graphql.FieldContext{
+			Index:  &i,
+			Result: &v[i],
+		}
+		ctx := graphql.WithFieldContext(ctx, fc)
+		f := func(i int) {
+			defer func() {
+				if r := recover(); r != nil {
+					ec.Error(ctx, ec.Recover(ctx, r))
+					ret = nil
+				}
+			}()
+			if !isLen1 {
+				defer wg.Done()
+			}
+			ret[i] = ec.marshalNChannelModelConfig2githubᚗcomᚋloopljᚋaxonhubᚋinternalᚋobjectsᚐChannelModelConfig(ctx, sel, v[i])
+		}
+		if isLen1 {
+			f(i)
+		} else {
+			go f(i)
+		}
+
+	}
+	wg.Wait()
+
+	for _, e := range ret {
+		if e == graphql.Null {
+			return graphql.Null
+		}
+	}
+
+	return ret
+}
+
+func (ec *executionContext) unmarshalOChannelModelConfigInput2ᚕgithubᚗcomᚋloopljᚋaxonhubᚋinternalᚋobjectsᚐChannelModelConfigᚄ(ctx context.Context, v any) ([]objects.ChannelModelConfig, error) {
+	if v == nil {
+		return nil, nil
+	}
+	var vSlice []any
+	vSlice = graphql.CoerceList(v)
+	var err error
+	res := make([]objects.ChannelModelConfig, len(vSlice))
+	for i := range vSlice {
+		ctx := graphql.WithPathContext(ctx, graphql.NewPathWithIndex(i))
+		res[i], err = ec.unmarshalNChannelModelConfigInput2githubᚗcomᚋloopljᚋaxonhubᚋinternalᚋobjectsᚐChannelModelConfig(ctx, vSlice[i])
+		if err != nil {
+			return nil, err
+		}
+	}
+	return res, nil
+}
+
 func (ec *executionContext) marshalOChannelModelPrice2ᚕᚖgithubᚗcomᚋloopljᚋaxonhubᚋinternalᚋentᚐChannelModelPriceᚄ(ctx context.Context, sel ast.SelectionSet, v []*ent.ChannelModelPrice) graphql.Marshaler {
 	if v == nil {
 		return graphql.Null
@@ -118675,6 +119297,38 @@ func (ec *executionContext) marshalODisabledAPIKey2ᚕᚖgithubᚗcomᚋlooplj�
 	return ret
 }
 
+func (ec *executionContext) unmarshalOEffortMap2githubᚗcomᚋloopljᚋaxonhubᚋinternalᚋobjectsᚐEffortMap(ctx context.Context, v any) (objects.EffortMap, error) {
+	if v == nil {
+		return nil, nil
+	}
+	var res objects.EffortMap
+	err := res.UnmarshalGQL(v)
+	return res, graphql.ErrorOnPath(ctx, err)
+}
+
+func (ec *executionContext) marshalOEffortMap2githubᚗcomᚋloopljᚋaxonhubᚋinternalᚋobjectsᚐEffortMap(ctx context.Context, sel ast.SelectionSet, v objects.EffortMap) graphql.Marshaler {
+	if v == nil {
+		return graphql.Null
+	}
+	return v
+}
+
+func (ec *executionContext) unmarshalOEffortMapInput2githubᚗcomᚋloopljᚋaxonhubᚋinternalᚋobjectsᚐEffortMap(ctx context.Context, v any) (objects.EffortMap, error) {
+	if v == nil {
+		return nil, nil
+	}
+	var res objects.EffortMap
+	err := res.UnmarshalGQL(v)
+	return res, graphql.ErrorOnPath(ctx, err)
+}
+
+func (ec *executionContext) marshalOEffortMapInput2githubᚗcomᚋloopljᚋaxonhubᚋinternalᚋobjectsᚐEffortMap(ctx context.Context, sel ast.SelectionSet, v objects.EffortMap) graphql.Marshaler {
+	if v == nil {
+		return graphql.Null
+	}
+	return v
+}
+
 func (ec *executionContext) marshalOExcludeAssociation2ᚕᚖgithubᚗcomᚋloopljᚋaxonhubᚋinternalᚋobjectsᚐExcludeAssociationᚄ(ctx context.Context, sel ast.SelectionSet, v []*objects.ExcludeAssociation) graphql.Marshaler {
 	if v == nil {
 		return graphql.Null
@@ -119411,6 +120065,21 @@ func (ec *executionContext) unmarshalOModelOrder2ᚖgithubᚗcomᚋloopljᚋaxon
 		return nil, nil
 	}
 	res, err := ec.unmarshalInputModelOrder(ctx, v)
+	return &res, graphql.ErrorOnPath(ctx, err)
+}
+
+func (ec *executionContext) marshalOModelReasoningConfig2ᚖgithubᚗcomᚋloopljᚋaxonhubᚋinternalᚋobjectsᚐModelReasoningConfig(ctx context.Context, sel ast.SelectionSet, v *objects.ModelReasoningConfig) graphql.Marshaler {
+	if v == nil {
+		return graphql.Null
+	}
+	return ec._ModelReasoningConfig(ctx, sel, v)
+}
+
+func (ec *executionContext) unmarshalOModelReasoningConfigInput2ᚖgithubᚗcomᚋloopljᚋaxonhubᚋinternalᚋobjectsᚐModelReasoningConfig(ctx context.Context, v any) (*objects.ModelReasoningConfig, error) {
+	if v == nil {
+		return nil, nil
+	}
+	res, err := ec.unmarshalInputModelReasoningConfigInput(ctx, v)
 	return &res, graphql.ErrorOnPath(ctx, err)
 }
 

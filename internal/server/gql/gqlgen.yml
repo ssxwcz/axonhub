@@ -97,12 +97,30 @@ models:
   DecimalInput:
     model:
       - github.com/looplj/axonhub/internal/objects.Decimal
+  EffortMap:
+    model:
+      - github.com/looplj/axonhub/internal/objects.EffortMap
+  EffortMapInput:
+    model:
+      - github.com/looplj/axonhub/internal/objects.EffortMap
   ModelMapping:
     model:
       - github.com/looplj/axonhub/internal/objects.ModelMapping
   ModelMappingInput:
     model:
       - github.com/looplj/axonhub/internal/objects.ModelMapping
+  ModelReasoningConfig:
+    model:
+      - github.com/looplj/axonhub/internal/objects.ModelReasoningConfig
+  ModelReasoningConfigInput:
+    model:
+      - github.com/looplj/axonhub/internal/objects.ModelReasoningConfig
+  ChannelModelConfig:
+    model:
+      - github.com/looplj/axonhub/internal/objects.ChannelModelConfig
+  ChannelModelConfigInput:
+    model:
+      - github.com/looplj/axonhub/internal/objects.ChannelModelConfig
   ReasoningEffortMapping:
     model:
       - github.com/looplj/axonhub/llm.ReasoningEffortMapping

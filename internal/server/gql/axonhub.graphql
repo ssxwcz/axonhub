@@ -2,6 +2,8 @@ scalar JSONRawMessage
 scalar JSONRawMessageInput
 scalar Decimal
 scalar DecimalInput
+scalar EffortMap
+scalar EffortMapInput
 
 type ModelMapping {
   from: String!
@@ -148,6 +150,7 @@ type ChannelSettings {
   rateLimit: ChannelRateLimit
   retryableStatusCodes: [Int!]
   retryableErrorPatterns: [RetryableErrorPattern!]
+  modelConfigs: [ChannelModelConfig!]
 }
 
 enum CapabilityPolicy {
@@ -198,6 +201,34 @@ input ModelMappingInput {
   to: String!
 }
 
+type ModelReasoningConfig {
+  enabled: Boolean
+  defaultEffort: String
+  defaultBudget: Int
+  effortMap: EffortMap
+}
+
+input ModelReasoningConfigInput {
+  enabled: Boolean
+  defaultEffort: String
+  defaultBudget: Int
+  effortMap: EffortMapInput
+}
+
+type ChannelModelConfig {
+  model: String!
+  apiFormat: String
+  path: String
+  reasoning: ModelReasoningConfig
+}
+
+input ChannelModelConfigInput {
+  model: String!
+  apiFormat: String
+  path: String
+  reasoning: ModelReasoningConfigInput
+}
+
 input ChannelSettingsInput {
   extraModelPrefix: String
   modelMappings: [ModelMappingInput!]
@@ -214,6 +245,7 @@ input ChannelSettingsInput {
   rateLimit: ChannelRateLimitInput
   retryableStatusCodes: [Int!]
   retryableErrorPatterns: [RetryableErrorPatternInput!]
+  modelConfigs: [ChannelModelConfigInput!]
 }
 
 input ChannelRateLimitInput {
