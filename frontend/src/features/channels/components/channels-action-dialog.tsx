@@ -58,12 +58,14 @@ import {
   getApiFormatsForProvider,
   getChannelTypeForApiFormat,
 } from '../data/config_providers';
-import { Channel, ChannelType, ApiFormat, RetryableErrorPattern, createChannelInputSchema, updateChannelInputSchema } from '../data/schema';
+import { Channel, ChannelType, ApiFormat, ChannelModelConfig, RetryableErrorPattern, createChannelInputSchema, updateChannelInputSchema } from '../data/schema';
 import { ProxyConfig, useOAuthFlow } from '../hooks/use-oauth-flow';
 import { mergeChannelSettingsForUpdate } from '../utils/merge';
+import { apiFormatLabel } from '../utils/api-format';
 import { isValidModelPattern, matchesModelPattern } from '../utils/pattern';
 import { ProxyType } from './channels-proxy-dialog';
 import { CopilotDeviceFlow } from './copilot-device-flow';
+import { ChannelsModelConfigDialog, summarizeChannelModelConfig } from './channels-model-config-dialog';
 import { ManualModelBadge } from './manual-model-badge';
 
 interface Props {
@@ -334,6 +336,8 @@ export function ChannelsActionDialog({ currentRow, duplicateFromRow, open, onOpe
   const { hasSystemScope } = usePermissions();
   const [supportedModels, setSupportedModels] = useState<string[]>(() => initialRow?.supportedModels || []);
   const [manualModels, setManualModels] = useState<string[]>(() => initialRow?.manualModels || []);
+  const [modelConfigs, setModelConfigs] = useState<ChannelModelConfig[]>(() => initialRow?.settings?.modelConfigs || []);
+  const [modelConfigDialogModel, setModelConfigDialogModel] = useState<string | null>(null);
   const [newModel, setNewModel] = useState('');
   const [selectedDefaultModels, setSelectedDefaultModels] = useState<string[]>([]);
   const [fetchedModels, setFetchedModels] = useState<string[]>([]);
@@ -592,6 +596,7 @@ export function ChannelsActionDialog({ currentRow, duplicateFromRow, open, onOpe
   useEffect(() => {
     if (open && initialRow) {
       setManualModels(initialRow.manualModels || []);
+      setModelConfigs(initialRow.settings?.modelConfigs || []);
     }
   }, [open, initialRow]);
 
@@ -636,7 +641,7 @@ export function ChannelsActionDialog({ currentRow, duplicateFromRow, open, onOpe
 
   const getApiFormatLabel = useCallback(
     (format: ApiFormat) => {
-      return t(`channels.dialogs.fields.apiFormat.formats.${format}`);
+      return apiFormatLabel(t, format);
     },
     [t]
   );
@@ -1287,6 +1292,8 @@ export function ChannelsActionDialog({ currentRow, duplicateFromRow, open, onOpe
           passThroughBody,
           retryableStatusCodes,
           retryableErrorPatterns,
+          // Drop configs of models no longer on the channel so no orphan rows persist.
+          modelConfigs: modelConfigs.filter((config) => supportedModels.includes(config.model)),
         });
 
         const updateInput = {
@@ -1331,6 +1338,7 @@ export function ChannelsActionDialog({ currentRow, duplicateFromRow, open, onOpe
           passThroughBody,
           retryableStatusCodes,
           retryableErrorPatterns,
+          modelConfigs: modelConfigs.filter((config) => supportedModels.includes(config.model)),
         });
 
         const createInput = {
@@ -1362,6 +1370,7 @@ export function ChannelsActionDialog({ currentRow, duplicateFromRow, open, onOpe
       form.reset();
       setSupportedModels([]);
       setManualModels([]);
+      setModelConfigs([]);
       onOpenChange(false);
     } catch (_error) {
       void _error;
@@ -1408,6 +1417,7 @@ export function ChannelsActionDialog({ currentRow, duplicateFromRow, open, onOpe
   const removeModel = (model: string) => {
     setSupportedModels(supportedModels.filter((m) => m !== model));
     setManualModels(manualModels.filter((m) => m !== model));
+    setModelConfigs((prev) => prev.filter((config) => config.model !== model));
   };
 
   const isModelManual = (model: string): boolean => {
@@ -1436,6 +1446,7 @@ export function ChannelsActionDialog({ currentRow, duplicateFromRow, open, onOpe
   const handleClearAllSupportedModels = () => {
     setSupportedModels([]);
     setManualModels([]);
+    setModelConfigs([]);
   };
   // Helper function to parse OAuth token from JSON string
   const parseOauthToken = (oauthApiKey: string): string => {
@@ -1695,6 +1706,14 @@ export function ChannelsActionDialog({ currentRow, duplicateFromRow, open, onOpe
     return supportedModels.slice(0, MAX_MODELS_DISPLAY);
   }, [supportedModels]);
 
+  const modelConfigByModel = useMemo(() => {
+    const map = new Map<string, ChannelModelConfig>();
+    for (const config of modelConfigs) {
+      map.set(config.model, config);
+    }
+    return map;
+  }, [modelConfigs]);
+
   // Filtered supported models based on search
   const filteredSupportedModels = useMemo(() => {
     if (!debouncedSupportedModelsSearch.trim()) {
@@ -1729,6 +1748,8 @@ export function ChannelsActionDialog({ currentRow, duplicateFromRow, open, onOpe
             form.reset();
             setSupportedModels(initialRow?.supportedModels || []);
             setManualModels(initialRow?.manualModels || []);
+            setModelConfigs(initialRow?.settings?.modelConfigs || []);
+            setModelConfigDialogModel(null);
             setSelectedDefaultModels([]);
             setFetchedModels([]);
             setUseFetchedModels(false);
@@ -2486,15 +2507,35 @@ export function ChannelsActionDialog({ currentRow, duplicateFromRow, open, onOpe
 
                           {/* Supported models display - limited to 3 with expand button */}
                           <div className='flex flex-wrap items-center gap-1'>
-                            {displayedSupportedModels.map((model) => (
-                              <Badge key={model} variant='secondary' className='text-xs'>
-                                {model}
-                                <ManualModelBadge isManual={isModelManual(model)} className='ml-1' />
-                                <button type='button' onClick={() => removeModel(model)} className='hover:text-destructive ml-1'>
-                                  <X size={12} />
-                                </button>
-                              </Badge>
-                            ))}
+                            {displayedSupportedModels.map((model) => {
+                              const modelConfig = modelConfigByModel.get(model);
+                              return (
+                                <Badge key={model} variant='secondary' className='text-xs'>
+                                  <button
+                                    type='button'
+                                    onClick={() => setModelConfigDialogModel(model)}
+                                    className='hover:text-primary cursor-pointer underline decoration-dotted underline-offset-2'
+                                    title={t('channels.dialogs.modelConfig.title')}
+                                  >
+                                    {model}
+                                  </button>
+                                  {modelConfig && (
+                                    <Tooltip>
+                                      <TooltipTrigger asChild>
+                                        <span className='bg-primary ml-1 inline-block h-1.5 w-1.5 rounded-full' />
+                                      </TooltipTrigger>
+                                      <TooltipContent>
+                                        <p>{summarizeChannelModelConfig(modelConfig, t)}</p>
+                                      </TooltipContent>
+                                    </Tooltip>
+                                  )}
+                                  <ManualModelBadge isManual={isModelManual(model)} className='ml-1' />
+                                  <button type='button' onClick={() => removeModel(model)} className='hover:text-destructive ml-1'>
+                                    <X size={12} />
+                                  </button>
+                                </Badge>
+                              );
+                            })}
                             {supportedModels.length > MAX_MODELS_DISPLAY && !supportedModelsExpanded && (
                               <Button
                                 type='button'
@@ -3337,6 +3378,24 @@ export function ChannelsActionDialog({ currentRow, duplicateFromRow, open, onOpe
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <ChannelsModelConfigDialog
+        open={modelConfigDialogModel !== null}
+        onOpenChange={(state) => {
+          if (!state) {
+            setModelConfigDialogModel(null);
+          }
+        }}
+        model={modelConfigDialogModel ?? ''}
+        config={modelConfigDialogModel ? (modelConfigByModel.get(modelConfigDialogModel) ?? null) : null}
+        onSave={(config) => {
+          setModelConfigs((prev) => {
+            const rest = prev.filter((item) => item.model !== modelConfigDialogModel);
+            return config ? [...rest, config] : rest;
+          });
+          setModelConfigDialogModel(null);
+        }}
+      />
     </>
   );
 }

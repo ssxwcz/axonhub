@@ -115,6 +115,17 @@ const CREATE_CHANNEL_MUTATION = `
           pattern
           regex
         }
+        modelConfigs {
+          model
+          apiFormat
+          path
+          reasoning {
+            enabled
+            defaultEffort
+            defaultBudget
+            effortMap
+          }
+        }
       }
       orderingWeight
       remark
@@ -183,6 +194,17 @@ const DUPLICATE_CHANNEL_MUTATION = `
         retryableErrorPatterns {
           pattern
           regex
+        }
+        modelConfigs {
+          model
+          apiFormat
+          path
+          reasoning {
+            enabled
+            defaultEffort
+            defaultBudget
+            effortMap
+          }
         }
       }
       orderingWeight
@@ -253,6 +275,17 @@ const BULK_CREATE_CHANNELS_MUTATION = `
           pattern
           regex
         }
+        modelConfigs {
+          model
+          apiFormat
+          path
+          reasoning {
+            enabled
+            defaultEffort
+            defaultBudget
+            effortMap
+          }
+        }
       }
       orderingWeight
       remark
@@ -321,6 +354,17 @@ const UPDATE_CHANNEL_MUTATION = `
         retryableErrorPatterns {
           pattern
           regex
+        }
+        modelConfigs {
+          model
+          apiFormat
+          path
+          reasoning {
+            enabled
+            defaultEffort
+            defaultBudget
+            effortMap
+          }
         }
       }
       orderingWeight
@@ -505,6 +549,17 @@ const BULK_IMPORT_CHANNELS_MUTATION = `
           retryableErrorPatterns {
             pattern
             regex
+          }
+          modelConfigs {
+            model
+            apiFormat
+            path
+            reasoning {
+              enabled
+              defaultEffort
+              defaultBudget
+              effortMap
+            }
           }
         }
       }
@@ -731,6 +786,17 @@ const BULK_UPDATE_CHANNEL_ORDERING_MUTATION = `
             pattern
             regex
           }
+          modelConfigs {
+            model
+            apiFormat
+            path
+            reasoning {
+              enabled
+              defaultEffort
+              defaultBudget
+              effortMap
+            }
+          }
         }
       }
     }
@@ -883,6 +949,17 @@ const QUERY_CHANNELS_QUERY = `
             retryableErrorPatterns {
               pattern
               regex
+            }
+            modelConfigs {
+              model
+              apiFormat
+              path
+              reasoning {
+                enabled
+                defaultEffort
+                defaultBudget
+                effortMap
+              }
             }
           }
           orderingWeight

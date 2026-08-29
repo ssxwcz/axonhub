@@ -278,6 +278,26 @@ export const retryableErrorPatternSchema = z.object({
 });
 export type RetryableErrorPattern = z.infer<typeof retryableErrorPatternSchema>;
 
+// Per-model reasoning configuration within a channel
+export const modelReasoningConfigSchema = z.object({
+  enabled: z.boolean().optional().nullable(),
+  defaultEffort: z.string().optional().nullable(),
+  defaultBudget: z.number().int().positive().optional().nullable(),
+  // Sparse effort mapping: key = requested effort, value = effort sent upstream
+  // (string) or null = explicitly unsupported (reasoning cleared).
+  effortMap: z.record(z.string(), z.string().nullable()).optional().nullable(),
+});
+export type ModelReasoningConfig = z.infer<typeof modelReasoningConfigSchema>;
+
+// Per-model channel configuration, matched by the actual model name sent upstream
+export const channelModelConfigSchema = z.object({
+  model: z.string().min(1),
+  apiFormat: z.string().optional().nullable(),
+  path: z.string().optional().nullable(),
+  reasoning: modelReasoningConfigSchema.optional().nullable(),
+});
+export type ChannelModelConfig = z.infer<typeof channelModelConfigSchema>;
+
 // Channel Settings
 export const channelSettingsSchema = z.object({
   extraModelPrefix: z.string().optional(),
@@ -295,6 +315,7 @@ export const channelSettingsSchema = z.object({
   rateLimit: channelRateLimitSchema.optional().nullable(),
   retryableStatusCodes: z.array(z.number().int().min(400).max(599)).optional().nullable(),
   retryableErrorPatterns: z.array(retryableErrorPatternSchema).optional().nullable(),
+  modelConfigs: z.array(channelModelConfigSchema).optional().nullable(),
 });
 
 export type ChannelSettings = z.infer<typeof channelSettingsSchema>;
