@@ -47,6 +47,17 @@ export const configurableChannelEndpointApiFormats = [
 
 export const configurableChannelEndpointApiFormatSchema = z.enum(configurableChannelEndpointApiFormats);
 
+// Chat-capable api formats for per-model protocol overrides. Restricted so
+// every option is effective at runtime (chat requests can actually be served
+// through it); other request types are covered by channel-level endpoints.
+// Keep in sync with modelConfigAPIFormats in internal/server/biz/channel.go.
+export const modelConfigApiFormats = [
+  'openai/chat_completions',
+  'openai/responses',
+  'anthropic/messages',
+  'gemini/contents',
+] as const;
+
 // Channel Endpoint
 export const channelEndpointSchema = z.object({
   apiFormat: z.string().min(1),

@@ -24,6 +24,7 @@ import (
 	"github.com/looplj/axonhub/internal/pkg/xcache/live"
 	"github.com/looplj/axonhub/internal/pkg/xerrors"
 	"github.com/looplj/axonhub/internal/server/scheduler"
+	"github.com/looplj/axonhub/llm"
 	"github.com/looplj/axonhub/llm/httpclient"
 	"github.com/looplj/axonhub/llm/transformer"
 	xaisubscription "github.com/looplj/axonhub/llm/transformer/xai/subscription"
@@ -709,8 +710,23 @@ func NormalizeRetryableErrorPatterns(settings *objects.ChannelSettings) error {
 	return nil
 }
 
+// modelConfigAPIFormats lists the chat-capable api formats accepted by
+// per-model protocol overrides. Restricted to formats that can serve chat
+// requests so every UI option is effective at runtime; other request types
+// (embeddings, images, ...) are covered by channel-level endpoints.
+var modelConfigAPIFormats = map[string]struct{}{
+	llm.APIFormatOpenAIChatCompletion.String(): {},
+	llm.APIFormatOpenAIResponse.String():       {},
+	llm.APIFormatAnthropicMessage.String():     {},
+	llm.APIFormatGeminiContents.String():       {},
+}
+
 // modelConfigReasoningEfforts lists the reasoning effort values accepted by
-// per-model configurations. "none" disables reasoning via the effort field.
+// the per-model default effort. "none" disables reasoning via the effort
+// field. EffortMap keys and values are free-form instead: the effort
+// vocabulary clients send and relays accept is open (e.g. gpt-5's
+// "minimal"), following cc-switch's "configured value is what gets sent"
+// philosophy, so they are only trimmed and emptiness-checked.
 var modelConfigReasoningEfforts = map[string]struct{}{
 	"low":    {},
 	"medium": {},
@@ -744,7 +760,7 @@ func NormalizeModelConfigs(settings *objects.ChannelSettings) error {
 
 		cfg.APIFormat = strings.TrimSpace(cfg.APIFormat)
 		if cfg.APIFormat != "" {
-			if _, ok := SupportedAPIFormats[cfg.APIFormat]; !ok {
+			if _, ok := modelConfigAPIFormats[cfg.APIFormat]; !ok {
 				return fmt.Errorf("model config %d: unsupported api_format %q", i+1, cfg.APIFormat)
 			}
 		}
@@ -773,17 +789,26 @@ func NormalizeModelConfigs(settings *objects.ChannelSettings) error {
 			}
 
 			if cfg.Reasoning.EffortMap != nil {
+				effortMap := make(map[string]*string, len(cfg.Reasoning.EffortMap))
 				for key, target := range cfg.Reasoning.EffortMap {
-					if _, ok := modelConfigReasoningEfforts[key]; !ok {
-						return fmt.Errorf("model config %d: unsupported effort map key %q", i+1, key)
+					key = strings.TrimSpace(key)
+					if key == "" {
+						return fmt.Errorf("model config %d: effort map key must not be empty", i+1)
+					}
+					if _, dup := effortMap[key]; dup {
+						return fmt.Errorf("model config %d: duplicate effort map key %q", i+1, key)
 					}
 					if target != nil {
-						*target = strings.TrimSpace(*target)
-						if _, ok := modelConfigReasoningEfforts[*target]; !ok {
-							return fmt.Errorf("model config %d: unsupported effort map value %q for key %q", i+1, *target, key)
+						trimmed := strings.TrimSpace(*target)
+						if trimmed == "" {
+							return fmt.Errorf("model config %d: effort map value for key %q must not be empty", i+1, key)
 						}
+						target = &trimmed
 					}
+					effortMap[key] = target
 				}
+				cfg.Reasoning.EffortMap = effortMap
+
 				if len(cfg.Reasoning.EffortMap) == 0 {
 					cfg.Reasoning.EffortMap = nil
 				}

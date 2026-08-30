@@ -41,6 +41,15 @@ func TestNormalizeModelConfigs(t *testing.T) {
 		require.ErrorContains(t, NormalizeModelConfigs(settings), "unsupported api_format")
 	})
 
+	t.Run("non-chat api format rejected", func(t *testing.T) {
+		settings := &objects.ChannelSettings{
+			ModelConfigs: []objects.ChannelModelConfig{
+				{Model: "m", APIFormat: llm.APIFormatOpenAIEmbedding.String()},
+			},
+		}
+		require.ErrorContains(t, NormalizeModelConfigs(settings), "unsupported api_format")
+	})
+
 	t.Run("full URL path rejected", func(t *testing.T) {
 		settings := &objects.ChannelSettings{
 			ModelConfigs: []objects.ChannelModelConfig{
@@ -81,7 +90,7 @@ func TestNormalizeModelConfigs(t *testing.T) {
 		target := " xhigh "
 		settings := &objects.ChannelSettings{
 			ModelConfigs: []objects.ChannelModelConfig{
-				{Model: "m", Reasoning: &objects.ModelReasoningConfig{EffortMap: map[string]*string{"max": &target, "high": nil}}},
+				{Model: "m", Reasoning: &objects.ModelReasoningConfig{EffortMap: map[string]*string{" max ": &target, "high": nil}}},
 			},
 		}
 
@@ -93,23 +102,44 @@ func TestNormalizeModelConfigs(t *testing.T) {
 		require.Nil(t, settings.ModelConfigs[0].Reasoning.EffortMap["high"])
 	})
 
-	t.Run("unsupported effort map key rejected", func(t *testing.T) {
+	t.Run("open effort key and value pass", func(t *testing.T) {
 		settings := &objects.ChannelSettings{
 			ModelConfigs: []objects.ChannelModelConfig{
-				{Model: "m", Reasoning: &objects.ModelReasoningConfig{EffortMap: map[string]*string{"ultra": nil}}},
+				{Model: "m", Reasoning: &objects.ModelReasoningConfig{EffortMap: map[string]*string{"minimal": lo.ToPtr("low")}}},
 			},
 		}
-		require.ErrorContains(t, NormalizeModelConfigs(settings), "unsupported effort map key")
+
+		require.NoError(t, NormalizeModelConfigs(settings))
+		mapped := settings.ModelConfigs[0].Reasoning.EffortMap["minimal"]
+		require.NotNil(t, mapped)
+		require.Equal(t, "low", *mapped)
 	})
 
-	t.Run("unsupported effort map value rejected", func(t *testing.T) {
-		target := "ultra"
+	t.Run("empty effort map key rejected", func(t *testing.T) {
 		settings := &objects.ChannelSettings{
 			ModelConfigs: []objects.ChannelModelConfig{
-				{Model: "m", Reasoning: &objects.ModelReasoningConfig{EffortMap: map[string]*string{"max": &target}}},
+				{Model: "m", Reasoning: &objects.ModelReasoningConfig{EffortMap: map[string]*string{"  ": nil}}},
 			},
 		}
-		require.ErrorContains(t, NormalizeModelConfigs(settings), "unsupported effort map value")
+		require.ErrorContains(t, NormalizeModelConfigs(settings), "effort map key must not be empty")
+	})
+
+	t.Run("duplicate effort map key after trim rejected", func(t *testing.T) {
+		settings := &objects.ChannelSettings{
+			ModelConfigs: []objects.ChannelModelConfig{
+				{Model: "m", Reasoning: &objects.ModelReasoningConfig{EffortMap: map[string]*string{"max": lo.ToPtr("xhigh"), " max ": lo.ToPtr("high")}}},
+			},
+		}
+		require.ErrorContains(t, NormalizeModelConfigs(settings), "duplicate effort map key")
+	})
+
+	t.Run("empty effort map value rejected", func(t *testing.T) {
+		settings := &objects.ChannelSettings{
+			ModelConfigs: []objects.ChannelModelConfig{
+				{Model: "m", Reasoning: &objects.ModelReasoningConfig{EffortMap: map[string]*string{"max": lo.ToPtr("  ")}}},
+			},
+		}
+		require.ErrorContains(t, NormalizeModelConfigs(settings), "must not be empty")
 	})
 
 	t.Run("empty entries dropped and values trimmed", func(t *testing.T) {
