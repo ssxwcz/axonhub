@@ -2,107 +2,171 @@ package scopes_test
 
 import (
 	"context"
+	"sort"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/looplj/axonhub/internal/authz"
 	"github.com/looplj/axonhub/internal/contexts"
 	"github.com/looplj/axonhub/internal/ent"
-	"github.com/looplj/axonhub/internal/ent/apikey"
 	"github.com/looplj/axonhub/internal/ent/enttest"
-	"github.com/looplj/axonhub/internal/ent/privacy"
 	"github.com/looplj/axonhub/internal/ent/request"
-	"github.com/looplj/axonhub/internal/ent/user"
-	"github.com/looplj/axonhub/internal/objects"
+	"github.com/looplj/axonhub/internal/ent/usagelog"
 	"github.com/looplj/axonhub/internal/scopes"
 )
 
-func TestProjectOwnerCanReadMemberPersonalKeyRequests(t *testing.T) {
-	client := enttest.NewEntClient(t, "sqlite3", "file:project-owner-personal-key-requests?mode=memory&_fk=1")
-	defer client.Close()
+func TestUserProjectScopeReadRequestsRuleIsolatesPlaygroundRequests(t *testing.T) {
+	client := enttest.NewEntClient(t, "sqlite3", "file:request_user_isolation?mode=memory&_fk=0")
+	t.Cleanup(func() { client.Close() })
 
-	setupCtx := privacy.DecisionContext(context.Background(), privacy.Allow)
-	project := client.Project.Create().SetName("project").SaveX(setupCtx)
-	owner := client.User.Create().SetEmail("owner@example.com").SetPassword("password").SaveX(setupCtx)
-	creator := client.User.Create().SetEmail("creator@example.com").SetPassword("password").SaveX(setupCtx)
-	member := client.User.Create().SetEmail("member@example.com").SetPassword("password").SaveX(setupCtx)
-	client.User.Create().SetEmail("outside@example.com").SetPassword("password").SaveX(setupCtx)
+	const projectID = 100
+	setupCtx := authz.WithTestBypass(ent.NewContext(context.Background(), client))
 
-	client.UserProject.Create().SetUserID(owner.ID).SetProjectID(project.ID).SetIsOwner(true).SaveX(setupCtx)
-	client.UserProject.Create().SetUserID(creator.ID).SetProjectID(project.ID).SetScopes([]string{string(scopes.ScopeReadRequests)}).SaveX(setupCtx)
-	client.UserProject.Create().SetUserID(member.ID).SetProjectID(project.ID).SetScopes([]string{string(scopes.ScopeReadRequests)}).SaveX(setupCtx)
-
-	personalKey := client.APIKey.Create().
-		SetName("creator personal key").
-		SetKey("personal-key").
-		SetType(apikey.TypePersonal).
-		SetUserID(creator.ID).
-		SetProjectID(project.ID).
-		SaveX(setupCtx)
-	personalRequest := client.Request.Create().
-		SetAPIKeyID(personalKey.ID).
-		SetProjectID(project.ID).
-		SetModelID("test-model").
+	creatorRequest, err := client.Request.Create().
+		SetProjectID(projectID).
+		SetUserID(1).
+		SetSource(request.SourcePlayground).
+		SetModelID("playground-owner-model").
+		SetRequestBody([]byte(`{}`)).
 		SetStatus(request.StatusCompleted).
-		SetRequestBody(objects.JSONRawMessage([]byte(`{}`))).
-		SaveX(setupCtx)
-	client.UsageLog.Create().
-		SetRequestID(personalRequest.ID).
-		SetAPIKeyID(personalKey.ID).
-		SetProjectID(project.ID).
-		SetModelID("test-model").
-		SaveX(setupCtx)
+		SetStream(false).
+		Save(setupCtx)
+	require.NoError(t, err)
 
-	loadUser := func(id int) *ent.User {
-		return client.User.Query().Where(user.IDEQ(id)).WithProjectUsers().OnlyX(setupCtx)
+	otherRequest, err := client.Request.Create().
+		SetProjectID(projectID).
+		SetUserID(2).
+		SetSource(request.SourcePlayground).
+		SetModelID("playground-other-model").
+		SetRequestBody([]byte(`{}`)).
+		SetStatus(request.StatusCompleted).
+		SetStream(false).
+		Save(setupCtx)
+	require.NoError(t, err)
+
+	legacyRequest, err := client.Request.Create().
+		SetProjectID(projectID).
+		SetSource(request.SourcePlayground).
+		SetModelID("legacy-playground-model").
+		SetRequestBody([]byte(`{}`)).
+		SetStatus(request.StatusCompleted).
+		SetStream(false).
+		Save(setupCtx)
+	require.NoError(t, err)
+
+	apiRequest, err := client.Request.Create().
+		SetProjectID(projectID).
+		SetSource(request.SourceAPI).
+		SetModelID("api-model").
+		SetRequestBody([]byte(`{}`)).
+		SetStatus(request.StatusCompleted).
+		SetStream(false).
+		Save(setupCtx)
+	require.NoError(t, err)
+
+	for _, req := range []*ent.Request{creatorRequest, otherRequest, legacyRequest, apiRequest} {
+		_, err = client.UsageLog.Create().
+			SetRequestID(req.ID).
+			SetProjectID(projectID).
+			SetModelID(req.ModelID).
+			SetSource(usagelog.Source(req.Source)).
+			Save(setupCtx)
+		require.NoError(t, err)
 	}
-	queryCount := func(user *ent.User) (int, int, error) {
-		ctx := ent.NewContext(context.Background(), client)
-		ctx = contexts.WithProjectID(contexts.WithUser(ctx, user), project.ID)
-		requestCount, err := client.Request.Query().Count(ctx)
-		if err != nil {
-			return 0, 0, err
-		}
-		usageLogCount, err := client.UsageLog.Query().Count(ctx)
-		return requestCount, usageLogCount, err
-	}
-	projectOwner := loadUser(owner.ID)
-	ownerCtx := ent.NewContext(context.Background(), client)
-	ownerCtx = contexts.WithProjectID(contexts.WithUser(ownerCtx, projectOwner), project.ID)
-
-	memberCount, err := client.User.Query().Count(ownerCtx)
-	require.NoError(t, err)
-	require.Equal(t, 3, memberCount)
-
-	personalKeyCount, err := client.APIKey.Query().Count(ownerCtx)
-	require.NoError(t, err)
-	require.Equal(t, 1, personalKeyCount)
-	loadedCreator, err := personalKey.QueryUser().Only(ownerCtx)
-	require.NoError(t, err)
-	require.Equal(t, creator.ID, loadedCreator.ID)
-
-	memberCtx := ent.NewContext(context.Background(), client)
-	memberCtx = contexts.WithProjectID(contexts.WithUser(memberCtx, loadUser(member.ID)), project.ID)
-	_, err = client.User.Query().Count(memberCtx)
-	require.Error(t, err)
 
 	tests := []struct {
-		name              string
-		user              *ent.User
-		wantRequestCount  int
-		wantUsageLogCount int
+		name       string
+		user       *ent.User
+		requestIDs []int
+		usageCount int
 	}{
-		{name: "project owner", user: projectOwner, wantRequestCount: 1, wantUsageLogCount: 1},
-		{name: "personal key creator", user: loadUser(creator.ID), wantRequestCount: 1, wantUsageLogCount: 1},
-		{name: "regular member", user: loadUser(member.ID), wantRequestCount: 0, wantUsageLogCount: 0},
+		{
+			name: "project member sees own playground requests and shared API requests",
+			user: projectRequestUser(1, projectID, false, nil),
+			requestIDs: []int{
+				creatorRequest.ID,
+				apiRequest.ID,
+			},
+			usageCount: 2,
+		},
+		{
+			name: "other project member cannot query another users playground request by ID",
+			user: projectRequestUser(2, projectID, false, nil),
+			requestIDs: []int{
+				otherRequest.ID,
+				apiRequest.ID,
+			},
+			usageCount: 2,
+		},
+		{
+			name: "project owner can audit all requests including legacy playground requests",
+			user: projectRequestUser(3, projectID, true, nil),
+			requestIDs: []int{
+				creatorRequest.ID,
+				otherRequest.ID,
+				legacyRequest.ID,
+				apiRequest.ID,
+			},
+			usageCount: 4,
+		},
+		{
+			name: "system scoped user can audit all requests in the selected project",
+			user: projectRequestUser(4, projectID, false, []string{string(scopes.ScopeReadRequests)}),
+			requestIDs: []int{
+				creatorRequest.ID,
+				otherRequest.ID,
+				legacyRequest.ID,
+				apiRequest.ID,
+			},
+			usageCount: 4,
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			requestCount, usageLogCount, err := queryCount(tt.user)
+			ctx := ent.NewContext(
+				contexts.WithProjectID(contexts.WithUser(context.Background(), tt.user), projectID),
+				client,
+			)
+
+			requests, err := client.Request.Query().All(ctx)
 			require.NoError(t, err)
-			require.Equal(t, tt.wantRequestCount, requestCount)
-			require.Equal(t, tt.wantUsageLogCount, usageLogCount)
+			require.Equal(t, tt.requestIDs, sortedRequestIDs(requests))
+
+			usageCount, err := client.UsageLog.Query().Count(ctx)
+			require.NoError(t, err)
+			require.Equal(t, tt.usageCount, usageCount)
 		})
 	}
+
+	ctx := ent.NewContext(
+		contexts.WithProjectID(contexts.WithUser(context.Background(), projectRequestUser(2, projectID, false, nil)), projectID),
+		client,
+	)
+	_, err = client.Request.Get(ctx, creatorRequest.ID)
+	require.True(t, ent.IsNotFound(err))
+}
+
+func projectRequestUser(id, projectID int, isOwner bool, systemScopes []string) *ent.User {
+	return &ent.User{
+		ID:     id,
+		Scopes: systemScopes,
+		Edges: ent.UserEdges{
+			ProjectUsers: []*ent.UserProject{{
+				ProjectID: projectID,
+				IsOwner:   isOwner,
+				Scopes:    []string{string(scopes.ScopeReadRequests)},
+			}},
+		},
+	}
+}
+
+func sortedRequestIDs(requests []*ent.Request) []int {
+	ids := make([]int, len(requests))
+	for i, req := range requests {
+		ids[i] = req.ID
+	}
+	sort.Ints(ids)
+	return ids
 }
