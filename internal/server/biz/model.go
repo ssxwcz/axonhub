@@ -753,22 +753,34 @@ func (svc *ModelService) ListEnabledModels(ctx context.Context) ([]ModelFacade, 
 	return models, nil
 }
 
+// SQLiteMaxVariableLimit is a safe chunk size for SQL IN clauses.
+const SQLiteMaxVariableLimit = 500
+
 // queryConfiguredModelFacades queries enabled Model entities and returns them as ModelFacades
 // filtered by allowed model IDs and channel associations.
 // suppressedIDs are configured model IDs omitted as structurally unroutable; callers that
 // merge channel-derived models must treat them as already seen so they are not resurrected.
 func (svc *ModelService) queryConfiguredModelFacades(ctx context.Context, allowedModelIDs []string, channels []*Channel) ([]ModelFacade, map[string]struct{}, error) {
-	query := svc.entFromContext(ctx).
-		Model.
-		Query().
-		Where(model.StatusEQ(model.StatusEnabled))
+	var enabledModels []*ent.Model
 	if len(allowedModelIDs) > 0 {
-		query = query.Where(model.ModelIDIn(allowedModelIDs...))
-	}
-
-	enabledModels, err := query.All(ctx)
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to list configured models: %w", err)
+		// Chunk allowedModelIDs to avoid SQLite "too many SQL variables" error.
+		for _, chunk := range lo.Chunk(allowedModelIDs, SQLiteMaxVariableLimit) {
+			chunkModels, err := svc.entFromContext(ctx).Model.Query().
+				Where(model.StatusEQ(model.StatusEnabled), model.ModelIDIn(chunk...)).
+				All(ctx)
+			if err != nil {
+				return nil, nil, fmt.Errorf("failed to list configured models: %w", err)
+			}
+			enabledModels = append(enabledModels, chunkModels...)
+		}
+	} else {
+		var err error
+		enabledModels, err = svc.entFromContext(ctx).Model.Query().
+			Where(model.StatusEQ(model.StatusEnabled)).
+			All(ctx)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to list configured models: %w", err)
+		}
 	}
 
 	var models []ModelFacade
