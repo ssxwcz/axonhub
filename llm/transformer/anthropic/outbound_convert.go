@@ -122,15 +122,8 @@ func buildBaseRequest(chatReq *llm.Request, config *Config) *MessageRequest {
 		MaxTokens:   resolveMaxTokens(chatReq),
 	}
 
-	var userID string
 	if chatReq.Metadata != nil && chatReq.Metadata["user_id"] != "" {
-		userID = chatReq.Metadata["user_id"]
-	} else if chatReq.User != nil && *chatReq.User != "" {
-		userID = *chatReq.User
-	}
-
-	if userID != "" {
-		req.Metadata = &AnthropicMetadata{UserID: shared.SanitizeUserID(userID)}
+		req.Metadata = &AnthropicMetadata{UserID: chatReq.Metadata["user_id"]}
 	}
 
 	// Native Anthropic thinking markers recorded by the inbound transformer. They

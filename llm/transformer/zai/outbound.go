@@ -270,18 +270,8 @@ func (t *OutboundTransformer) TransformRequest(
 		RequestID: "",
 	}
 
-	var userID string
-	if llmReq.Metadata != nil && llmReq.Metadata["user_id"] != "" {
-		userID = llmReq.Metadata["user_id"]
-	} else if llmReq.User != nil && *llmReq.User != "" {
-		userID = *llmReq.User
-	}
-
-	if userID != "" {
-		zaiReq.UserID = shared.SanitizeUserID(userID)
-	}
-
-	if llmReq.Metadata != nil && llmReq.Metadata["request_id"] != "" {
+	if llmReq.Metadata != nil {
+		zaiReq.UserID = llmReq.Metadata["user_id"]
 		zaiReq.RequestID = llmReq.Metadata["request_id"]
 	}
 
