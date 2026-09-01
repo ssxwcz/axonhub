@@ -1,10 +1,30 @@
 ---
-description: "Workflow for merging upstream PRs into a fork: commit attribution, PR references, signing"
+description: "Fork maintenance workflow: sync upstream, own features on separate branches, commit attribution and signing"
 ---
 
-# Merging Upstream PRs into This Fork
+# Fork Maintenance Workflow (follow upstream + own changes)
 
-When merging upstream `looplj/axonhub` PRs into this fork (`review/upstream-prs`), follow these rules so the history stays clean, attributable, and link-free.
+This fork (`ssxwcz/axonhub`) follows upstream `looplj/axonhub` closely while carrying a few own changes. The previous manual-PR-merge workflow was archived at tag `archive/review-upstream-prs`.
+
+## 0. Maintenance model (how this fork is kept)
+
+- **`unstable` = the follow-upstream mainline.** It equals upstream plus a small, stable set of own changes. Do own work in separate branches, not directly on `unstable`.
+- **Sync upstream instead of manually merging PRs.** Upstream merges PRs on its own; you get them for free via sync. Do **not** re-implement upstream PRs by hand.
+  ```bash
+  git checkout unstable && git pull origin unstable
+  git fetch upstream && git merge upstream/unstable
+  # resolve conflicts, build + test, then
+  git push origin unstable
+  ```
+- **If you need an upstream PR that is not merged yet**, `git cherry-pick` its commit onto your branch (keeps the original author), and note the source in the message (`from upstream PR NNNN`). When upstream later merges the same PR, sync aligns the content.
+- **Own features** go on `feat/<name>` branches cut from a freshly-synced `unstable`, then merge back with squash.
+- **Own changes that stay on `unstable`** (re-apply if a sync conflict drops them):
+  - `.goreleaser.yml` — homebrew `brews` section removed (upstream tap cannot be written by this fork's token)
+  - `docker-publish.yml`, `docker-unstable.yml` — publish to `ghcr.io/<owner>/axonhub` (GHCR, `GITHUB_TOKEN`)
+  - `.agent/rules/workflows/merge-upstream-prs.md` — this doc
+  - `internal/build/VERSION` — keep aligned with the deployed release (currently `v1.0.0-beta9`)
+  - frontend price trim incl. schedule overrides in `channels-model-price-dialog.tsx`
+- **Release**: from `unstable`, tag `v<version>` — triggers the Release (binaries) and Docker image workflows (GHCR). Never commit auto-linkable refs.
 
 ## 1. PR / Issue References (avoid auto-linking)
 
@@ -13,21 +33,21 @@ When merging upstream `looplj/axonhub` PRs into this fork (`review/upstream-prs`
 
 ## 2. Author / Committer Attribution
 
-- For commits that integrate an upstream PR: set **author = the upstream PR author** (via `git commit --amend --no-edit --author="Name <email>"`), keep **committer = self**. Manual conflict resolution and integration work is attributed through the committer field, never by claiming the author.
-- For your own fixes, features, reverts, and chores: author = self (no rewrite needed).
-- Query upstream author per PR:
+- When cherry-picking or integrating an upstream commit: keep **author = the upstream author**, **committer = self**. Manual conflict resolution and integration work is attributed through the committer field, never by claiming the author.
+- For your own fixes, features, reverts, and chores: author = self.
+- If a commit was already created with self as author, rewrite per-commit author via a `GIT_SEQUENCE_EDITOR` script that injects `exec git commit --amend --no-edit -S --author="Name <email>"` after the matching `pick` lines, then `git rebase -i upstream/unstable`. Query upstream author per PR:
   ```bash
   gh api "repos/looplj/axonhub/pulls/<NNN>/commits" --jq '.[0].commit.author | "\(.name) <\(.email)>"'
   ```
-- Rewrite with per-commit author via a `GIT_SEQUENCE_EDITOR` script that injects `exec git commit --amend --no-edit -S --author="..."` after the matching `pick` lines, then `git rebase -i upstream/unstable`.
 
 ## 3. GPG Signing
 
 - Every commit must be signed: `git commit -S` (config: `commit.gpgsign = true`, key `55132190BC9FEABD`).
 - Any history rewrite (`filter-branch`, `rebase`) **drops signatures** — always re-sign afterwards:
   ```bash
-  GIT_SEQUENCE_EDITOR=true GIT_EDITOR=true git rebase --exec 'git commit --amend --no-edit -S' upstream/unstable
+  GIT_SEQUENCE_EDITOR=true GIT_EDITOR=true git rebase --exec 'git commit --amend --no-edit -S' <base>
   ```
+- Creating a git tag in this environment hangs on gpg signing (`pinentry-gnome3` + nvim); use `git -c tag.gpgsign=false tag <name> <ref>` instead.
 
 ## 4. pnpm Lockfile Pollution
 
@@ -37,7 +57,7 @@ When merging upstream `looplj/axonhub` PRs into this fork (`review/upstream-prs`
   git checkout -- frontend/pnpm-lock.yaml
   ```
 
-## 5. Verification Before Merging to unstable
+## 5. Verification Before Pushing to unstable
 
 - Backend build incl. CI flag: `go build -ldflags "-s -w" -tags=nomsgpack -o ./tmp/axonhub ./cmd/axonhub`, plus `go build ./...`, `cd llm && go build ./...`, `cd cmd/schema && go build`.
 - Tests: `make test-backend-all` (root module + `llm/`).
@@ -48,10 +68,10 @@ When merging upstream `looplj/axonhub` PRs into this fork (`review/upstream-prs`
 
 - Keep docker image targets at `ghcr.io/${{ github.repository_owner }}/axonhub` (owner-scoped, `GITHUB_TOKEN` auth) — never hardcode the upstream `looplj/axonhub` Docker Hub namespace in `docker-publish.yml` / `docker-unstable.yml`.
 - `helm-chart.yml` has an `owner == 'looplj'` guard and should stay unchanged.
+- Fork's Actions need **Settings → Actions → General → Workflow permissions = Read and write** for the multi-arch manifest step; the `packages: write` job permission covers single-arch pushes but not `docker buildx imagetools create`.
 
-## 7. Merging the PR into unstable
+## 7. Merging PRs into unstable (own work)
 
-- Open the PR with base `unstable`, head `review/upstream-prs`.
-- Merge with **squash** (`gh pr merge <n> --repo ssxwcz/axonhub --squash`), **never `--merge`** — one integration commit on `unstable`, keeping its history clean. Full per-commit history (original authors, GPG signatures) stays on the review branch.
-- CI lint runs against the merge base and catches issues in upstream PR code that local `--new` checks miss (e.g. canonicalheader, misspell). If lint fails, fix on the review branch, re-push, and re-check before merging.
-- If the PR already merged with `--merge`, squash afterwards: `git reset --soft <pre-merge tip>` on a branch based on `origin/unstable`, commit once, and `git push --force-with-lease origin <branch>:unstable`.
+- Open PRs with base `unstable`, head `feat/<name>`.
+- Merge with **squash** (`gh pr merge <n> --repo ssxwcz/axonhub --squash`), **never `--merge`** — one integration commit on `unstable`, keeping its history clean.
+- CI lint runs against the merge base and catches issues in upstream PR code that local `--new` checks miss (e.g. canonicalheader, misspell). If lint fails, fix, re-push, and re-check before merging.
