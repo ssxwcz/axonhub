@@ -3,6 +3,7 @@ package zai
 import (
 	"testing"
 
+	"github.com/samber/lo"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -75,8 +76,6 @@ func TestNormalizeGLM53Effort(t *testing.T) {
 }
 
 func TestResolveZaiThinking(t *testing.T) {
-	effortPtr := func(s string) *string { return &s }
-
 	tests := []struct {
 		name            string
 		model           string
@@ -90,21 +89,21 @@ func TestResolveZaiThinking(t *testing.T) {
 			model:           "glm-5.3-flash",
 			reasoningEffort: "none",
 			wantThinking:    &Thinking{Type: "enabled"},
-			wantEffort:      effortPtr("low"),
+			wantEffort:      lo.ToPtr("low"),
 		},
 		{
 			name:            "glm-5.3 high passes through",
 			model:           "glm-5.3",
 			reasoningEffort: "high",
 			wantThinking:    &Thinking{Type: "enabled"},
-			wantEffort:      effortPtr("high"),
+			wantEffort:      lo.ToPtr("high"),
 		},
 		{
 			name:            "glm-5.3 xhigh maps to max",
 			model:           "glm-5.3",
 			reasoningEffort: "xhigh",
 			wantThinking:    &Thinking{Type: "enabled"},
-			wantEffort:      effortPtr("max"),
+			wantEffort:      lo.ToPtr("max"),
 		},
 		{
 			name:            "glm-5.3 channel mapping none to low",
@@ -112,7 +111,7 @@ func TestResolveZaiThinking(t *testing.T) {
 			reasoningEffort: "none",
 			mappings:        []llm.ReasoningEffortMapping{{From: "none", To: "low"}},
 			wantThinking:    &Thinking{Type: "enabled"},
-			wantEffort:      effortPtr("low"),
+			wantEffort:      lo.ToPtr("low"),
 		},
 		{
 			name:            "glm-5.3 channel mapping xhigh to max",
@@ -120,7 +119,7 @@ func TestResolveZaiThinking(t *testing.T) {
 			reasoningEffort: "xhigh",
 			mappings:        []llm.ReasoningEffortMapping{{From: "xhigh", To: "max"}},
 			wantThinking:    &Thinking{Type: "enabled"},
-			wantEffort:      effortPtr("max"),
+			wantEffort:      lo.ToPtr("max"),
 		},
 		{
 			name:            "glm-5.2 none disables thinking",
@@ -134,7 +133,7 @@ func TestResolveZaiThinking(t *testing.T) {
 			model:           "glm-5.2",
 			reasoningEffort: "low",
 			wantThinking:    &Thinking{Type: "enabled"},
-			wantEffort:      effortPtr("low"),
+			wantEffort:      lo.ToPtr("low"),
 		},
 		{
 			name:            "glm-4.7 none disables thinking",
