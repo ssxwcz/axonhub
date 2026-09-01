@@ -10,11 +10,11 @@ import (
 	"github.com/looplj/axonhub/llm/pipeline"
 )
 
-const upstreamRequestIDHeader = "X-Request-Id"
+const upstreamRequestIDHeader = "X-Request-ID"
 
 // applyUpstreamRequestID replaces any client-provided request ID with AxonHub's
 // per-request ID. Trace IDs may intentionally span multiple agent calls, while
-// X-Request-Id identifies one HTTP request and must remain unique downstream.
+// X-Request-ID identifies one HTTP request and must remain unique downstream.
 func applyUpstreamRequestID() pipeline.Middleware {
 	return pipeline.OnRawRequest("upstream-request-id", func(ctx context.Context, request *httpclient.Request) (*httpclient.Request, error) {
 		requestID, ok := contexts.GetRequestID(ctx)

@@ -158,7 +158,7 @@ func isSuccessfulTerminalStreamEvent(event *httpclient.StreamEvent) bool {
 
 	if event.Type == "response.completed" || eventType == "response.completed" {
 		switch gjson.GetBytes(event.Data, "response.status").String() {
-		case "failed", "incomplete", "cancelled", "canceled":
+		case "failed", "incomplete", "cancelled", "canceled": //nolint:misspell // upstream may send either spelling
 			return false
 		}
 	}

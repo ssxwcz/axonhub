@@ -14,19 +14,19 @@ import (
 func TestApplyUpstreamRequestID_ReusedClientIDGetsUniqueUpstreamIDs(t *testing.T) {
 	middleware := applyUpstreamRequestID()
 
+	firstReq := &httpclient.Request{Headers: http.Header{}}
+	firstReq.Headers.Set(upstreamRequestIDHeader, "shared-agent-trace")
 	first, err := middleware.OnOutboundRawRequest(
 		contexts.WithRequestID(t.Context(), "ar-first-request"),
-		&httpclient.Request{Headers: http.Header{
-			upstreamRequestIDHeader: []string{"shared-agent-trace"},
-		}},
+		firstReq,
 	)
 	require.NoError(t, err)
 
+	secondReq := &httpclient.Request{Headers: http.Header{}}
+	secondReq.Headers.Set(upstreamRequestIDHeader, "shared-agent-trace")
 	second, err := middleware.OnOutboundRawRequest(
 		contexts.WithRequestID(t.Context(), "ar-second-request"),
-		&httpclient.Request{Headers: http.Header{
-			upstreamRequestIDHeader: []string{"shared-agent-trace"},
-		}},
+		secondReq,
 	)
 	require.NoError(t, err)
 
@@ -44,9 +44,8 @@ func TestApplyUpstreamRequestID_InitializesHeaders(t *testing.T) {
 }
 
 func TestApplyUpstreamRequestID_PreservesHeaderWithoutContextID(t *testing.T) {
-	request := &httpclient.Request{Headers: http.Header{
-		upstreamRequestIDHeader: []string{"client-request-id"},
-	}}
+	request := &httpclient.Request{Headers: http.Header{}}
+	request.Headers.Set(upstreamRequestIDHeader, "client-request-id")
 
 	got, err := applyUpstreamRequestID().OnOutboundRawRequest(t.Context(), request)
 	require.NoError(t, err)

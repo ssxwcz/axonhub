@@ -230,7 +230,7 @@ func TestInboundPersistentStream_Close_WithTerminalEvent(t *testing.T) {
 }
 
 // TestInboundPersistentStream_Close_ResponsesFailureTerminalDoesNotComplete
-// verifies that failed, incomplete, and cancelled Responses terminals do not
+// verifies that failed, incomplete, and canceled Responses terminals do not
 // mark the request completed.
 func TestInboundPersistentStream_Close_ResponsesFailureTerminalDoesNotComplete(t *testing.T) {
 	tests := []struct {
@@ -250,7 +250,7 @@ func TestInboundPersistentStream_Close_ResponsesFailureTerminalDoesNotComplete(t
 		},
 		{
 			name: "response.cancelled JSON type",
-			data: `{"type":"response.cancelled","response":{"status":"cancelled"}}`,
+			data: `{"type":"response.cancelled","response":{"status":"cancelled"}}`, //nolint:misspell // wire format uses this spelling
 		},
 		{
 			name:      "response.completed with failed status",
@@ -262,9 +262,9 @@ func TestInboundPersistentStream_Close_ResponsesFailureTerminalDoesNotComplete(t
 			data: `{"type":"response.completed","response":{"status":"incomplete"}}`,
 		},
 		{
-			name:      "response.completed with cancelled status",
+			name:      "response.completed with canceled status",
 			eventType: "response.completed",
-			data:      `{"type":"response.completed","response":{"status":"cancelled"}}`,
+			data:      `{"type":"response.completed","response":{"status":"cancelled"}}`, //nolint:misspell // wire format uses this spelling
 		},
 	}
 
