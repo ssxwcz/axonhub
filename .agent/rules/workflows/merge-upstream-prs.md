@@ -48,3 +48,10 @@ When merging upstream `looplj/axonhub` PRs into this fork (`review/upstream-prs`
 
 - Keep docker image targets at `ghcr.io/${{ github.repository_owner }}/axonhub` (owner-scoped, `GITHUB_TOKEN` auth) — never hardcode the upstream `looplj/axonhub` Docker Hub namespace in `docker-publish.yml` / `docker-unstable.yml`.
 - `helm-chart.yml` has an `owner == 'looplj'` guard and should stay unchanged.
+
+## 7. Merging the PR into unstable
+
+- Open the PR with base `unstable`, head `review/upstream-prs`.
+- Merge with **squash** (`gh pr merge <n> --repo ssxwcz/axonhub --squash`), **never `--merge`** — one integration commit on `unstable`, keeping its history clean. Full per-commit history (original authors, GPG signatures) stays on the review branch.
+- CI lint runs against the merge base and catches issues in upstream PR code that local `--new` checks miss (e.g. canonicalheader, misspell). If lint fails, fix on the review branch, re-push, and re-check before merging.
+- If the PR already merged with `--merge`, squash afterwards: `git reset --soft <pre-merge tip>` on a branch based on `origin/unstable`, commit once, and `git push --force-with-lease origin <branch>:unstable`.
