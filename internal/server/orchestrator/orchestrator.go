@@ -81,6 +81,7 @@ func NewChatCompletionOrchestrator(
 		PromptProvider:     promptService,
 		PromptProtecter:    promptProtectionRuleService,
 		Middlewares: []pipeline.Middleware{
+			cc.FixMissingToolCalls(),
 			cc.StripBillingHeaderCCH(),
 			cc.SystemCacheCompatibility(),
 			stream.EnsureUsage(),
@@ -213,6 +214,12 @@ func (processor *ChatCompletionOrchestrator) Process(ctx context.Context, reques
 	}
 
 	var pipelineOpts []pipeline.Option
+	// This recovery is a Responses-specific exception to the normal retry
+	// policy. Pass the system toggle into each request so executor decorators
+	// can honor it without sharing mutable transformer state.
+	pipelineOpts = append(pipelineOpts, pipeline.WithInvalidEncryptedContentRetry(
+		retryPolicy.Enabled && retryPolicy.RetryInvalidEncryptedContent,
+	))
 
 	// Only apply retry if policy is enabled
 	if retryPolicy.Enabled {
@@ -267,6 +274,9 @@ func (processor *ChatCompletionOrchestrator) Process(ctx context.Context, reques
 		// User-Agent value (either from client pass-through or default "axonhub/1.0").
 		// This allows override headers to modify the User-Agent if configured.
 		applyUserAgentPassThrough(outbound, processor.SystemService),
+		// Replace a client-provided X-Request-Id with AxonHub's unique per-request
+		// identifier. Header overrides run afterwards and can still opt out.
+		applyUpstreamRequestID(),
 		applyOverrideRequestHeaders(outbound),
 
 		// Unified performance tracking middleware.
@@ -312,10 +322,12 @@ func (processor *ChatCompletionOrchestrator) Process(ctx context.Context, reques
 		// Update the last request execution status based on error if it exists
 		// This ensures that when retry fails completely, the last execution is properly marked
 		if requestExec := outbound.GetRequestExecution(); requestExec != nil {
-			if updateErr := processor.RequestService.UpdateRequestExecutionStatusFromError(
+			if updateErr := persistRequestExecutionFailure(
 				persistCtx,
+				processor.RequestService,
 				requestExec.ID,
 				err,
+				nil,
 			); updateErr != nil {
 				log.Warn(persistCtx, "Failed to update request execution status from error", log.Cause(updateErr))
 			}

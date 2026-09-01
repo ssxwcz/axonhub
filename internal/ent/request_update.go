@@ -442,11 +442,6 @@ func (_u *RequestUpdate) defaults() error {
 
 // check runs all checks and user-defined validators on the builder.
 func (_u *RequestUpdate) check() error {
-	if v, ok := _u.mutation.ExternalID(); ok {
-		if err := request.ExternalIDValidator(v); err != nil {
-			return &ValidationError{Name: "external_id", err: fmt.Errorf(`ent: validator failed for field "Request.external_id": %w`, err)}
-		}
-	}
 	if v, ok := _u.mutation.Status(); ok {
 		if err := request.StatusValidator(v); err != nil {
 			return &ValidationError{Name: "status", err: fmt.Errorf(`ent: validator failed for field "Request.status": %w`, err)}
@@ -478,6 +473,9 @@ func (_u *RequestUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	}
 	if value, ok := _u.mutation.UpdatedAt(); ok {
 		_spec.SetField(request.FieldUpdatedAt, field.TypeTime, value)
+	}
+	if _u.mutation.UserIDCleared() {
+		_spec.ClearField(request.FieldUserID, field.TypeInt)
 	}
 	if _u.mutation.ReasoningEffortCleared() {
 		_spec.ClearField(request.FieldReasoningEffort, field.TypeString)
@@ -1137,11 +1135,6 @@ func (_u *RequestUpdateOne) defaults() error {
 
 // check runs all checks and user-defined validators on the builder.
 func (_u *RequestUpdateOne) check() error {
-	if v, ok := _u.mutation.ExternalID(); ok {
-		if err := request.ExternalIDValidator(v); err != nil {
-			return &ValidationError{Name: "external_id", err: fmt.Errorf(`ent: validator failed for field "Request.external_id": %w`, err)}
-		}
-	}
 	if v, ok := _u.mutation.Status(); ok {
 		if err := request.StatusValidator(v); err != nil {
 			return &ValidationError{Name: "status", err: fmt.Errorf(`ent: validator failed for field "Request.status": %w`, err)}
@@ -1190,6 +1183,9 @@ func (_u *RequestUpdateOne) sqlSave(ctx context.Context) (_node *Request, err er
 	}
 	if value, ok := _u.mutation.UpdatedAt(); ok {
 		_spec.SetField(request.FieldUpdatedAt, field.TypeTime, value)
+	}
+	if _u.mutation.UserIDCleared() {
+		_spec.ClearField(request.FieldUserID, field.TypeInt)
 	}
 	if _u.mutation.ReasoningEffortCleared() {
 		_spec.ClearField(request.FieldReasoningEffort, field.TypeString)

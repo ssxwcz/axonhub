@@ -35,11 +35,12 @@ type OutboundPersistentStream struct {
 	request     *ent.Request
 	requestExec *ent.RequestExecution
 
-	transformer    transformer.Outbound
-	perf           *biz.PerformanceRecord
-	responseChunks []*httpclient.StreamEvent
-	closed         bool
-	state          *PersistenceState
+	transformer       transformer.Outbound
+	perf              *biz.PerformanceRecord
+	responseChunks    []*httpclient.StreamEvent
+	terminalEventSeen bool
+	closed            bool
+	state             *PersistenceState
 }
 
 var _ streams.Stream[*httpclient.StreamEvent] = (*OutboundPersistentStream)(nil)
@@ -76,17 +77,22 @@ func (ts *OutboundPersistentStream) Next() bool {
 	return ts.stream.Next()
 }
 
+// Current returns the current stream event and buffers it for persistence. It
+// marks the stream completed when a successful terminal event is observed.
 func (ts *OutboundPersistentStream) Current() *httpclient.StreamEvent {
 	event := ts.stream.Current()
 	if event != nil {
 		// For raw binary audio chunks (TTS stream_format=audio), persist only a size
 		// summary to avoid buffering the full audio payload in memory.
 		ts.responseChunks = append(ts.responseChunks, httpclient.SummarizeBinaryChunk(event))
-		// Check if this is a terminal event, which indicates the stream completed successfully.
-		// For Chat Completions API this is the raw [DONE] event; for Responses API this is
-		// response.completed; for Anthropic Messages API this is message_stop.
-		if IsTerminalStreamEvent(event) {
-			ts.state.StreamCompleted = true
+		// A successful terminal event marks the stream completed. For Chat Completions
+		// this is the raw [DONE] event; for Responses this is response.completed; for
+		// Anthropic Messages this is message_stop.
+		if IsTerminalStreamEvent(event) && !ts.terminalEventSeen {
+			ts.terminalEventSeen = true
+			if isSuccessfulTerminalStreamEvent(event) {
+				ts.state.StreamCompleted = true
+			}
 		}
 	}
 
@@ -97,6 +103,9 @@ func (ts *OutboundPersistentStream) Err() error {
 	return ts.stream.Err()
 }
 
+// Close finalizes the stream and persists the request execution outcome. A
+// successful terminal or aggregated response is recorded as completed; an
+// incomplete or errored stream is recorded as failed.
 func (ts *OutboundPersistentStream) Close() error {
 	if ts.closed {
 		return nil
@@ -132,11 +141,7 @@ func (ts *OutboundPersistentStream) Close() error {
 
 		ts.persistFailureChunks(persistCtx)
 
-		if ts.requestExec != nil {
-			if err := ts.RequestService.UpdateRequestExecutionStatusFromError(persistCtx, ts.requestExec.ID, streamErr); err != nil {
-				log.Warn(persistCtx, "Failed to update request execution status from error", log.Cause(err))
-			}
-		}
+		ts.persistExecutionFailure(persistCtx, streamErr)
 
 		return ts.stream.Close()
 	}
@@ -146,7 +151,7 @@ func (ts *OutboundPersistentStream) Close() error {
 	var aggErr error
 	aggregatedCompleted := false
 
-	if len(ts.responseChunks) > 0 {
+	if len(ts.responseChunks) > 0 && !ts.terminalEventSeen {
 		responseBody, meta, aggErr = ts.transformer.AggregateStreamChunks(context.WithoutCancel(ctx), ts.state.RawProviderRequest, ts.responseChunks)
 		aggregatedCompleted = aggErr == nil && isCompletedAggregated(meta)
 		ts.logFinalizationDecision(ctx, "aggregated_outbound_chunks", streamErr, ctxErr, aggregatedCompleted, aggErr)
@@ -175,11 +180,7 @@ func (ts *OutboundPersistentStream) Close() error {
 			errToReport = ErrStreamIncomplete
 		}
 
-		if ts.requestExec != nil {
-			if err := ts.RequestService.UpdateRequestExecutionStatusFromError(persistCtx, ts.requestExec.ID, errToReport); err != nil {
-				log.Warn(persistCtx, "Failed to update request execution status from error", log.Cause(err))
-			}
-		}
+		ts.persistExecutionFailure(persistCtx, errToReport)
 
 		return ts.stream.Close()
 	}
@@ -194,11 +195,7 @@ func (ts *OutboundPersistentStream) Close() error {
 		ts.persistFailureChunks(persistCtx)
 
 		errToReport := ErrStreamIncomplete
-		if ts.requestExec != nil {
-			if err := ts.RequestService.UpdateRequestExecutionStatusFromError(persistCtx, ts.requestExec.ID, errToReport); err != nil {
-				log.Warn(persistCtx, "Failed to update request execution status from error", log.Cause(err))
-			}
-		}
+		ts.persistExecutionFailure(persistCtx, errToReport)
 
 		return ts.stream.Close()
 	}
@@ -275,6 +272,42 @@ func (ts *OutboundPersistentStream) persistFailureChunks(ctx context.Context) {
 
 	if err := ts.RequestService.SaveRequestExecutionChunks(ctx, ts.requestExec.ID, ts.responseChunks); err != nil {
 		log.Warn(ctx, "Failed to save request execution chunks after stream failure", log.Cause(err))
+	}
+}
+
+// failureLatencyMetrics captures the latency metrics collected before the stream failed,
+// so a failed execution still records its time-to-first-token and total latency.
+func (ts *OutboundPersistentStream) failureLatencyMetrics() *biz.LatencyMetrics {
+	if ts.perf == nil || ts.perf.StartTime.IsZero() {
+		return nil
+	}
+
+	endTime := ts.perf.EndTime
+	if endTime.IsZero() {
+		endTime = time.Now()
+	}
+
+	latencyMs := biz.ClampLatency(endTime.Sub(ts.perf.StartTime).Milliseconds())
+	metrics := &biz.LatencyMetrics{LatencyMs: &latencyMs}
+
+	if ts.perf.Stream && ts.perf.FirstTokenTime != nil {
+		firstTokenLatencyMs := biz.ClampLatency(ts.perf.FirstTokenTime.Sub(ts.perf.StartTime).Milliseconds())
+		metrics.FirstTokenLatencyMs = &firstTokenLatencyMs
+	}
+
+	return metrics
+}
+
+// persistExecutionFailure marks the execution failed (or canceled) with a classified
+// error and the latency metrics captured before the failure.
+func (ts *OutboundPersistentStream) persistExecutionFailure(ctx context.Context, rawErr error) {
+	if ts.requestExec == nil {
+		return
+	}
+
+	err := persistRequestExecutionFailure(ctx, ts.RequestService, ts.requestExec.ID, rawErr, ts.failureLatencyMetrics())
+	if err != nil {
+		log.Warn(ctx, "Failed to update request execution status from error", log.Cause(err))
 	}
 }
 

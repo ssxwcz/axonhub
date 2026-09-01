@@ -106,6 +106,18 @@ func (s *responsesOutboundStream) Next() bool {
 	if !s.stream.Next() {
 		if s.err == nil && s.stream.Err() == nil {
 			if !s.responseCompleted {
+				// Some OpenAI-compatible Responses upstreams (e.g.
+				// Bailian/DashScope compatible-mode) close the SSE stream
+				// cleanly after delivering content and usage, without emitting
+				// response.completed. When output was produced and the source
+				// ended cleanly (no transport error), synthesize the terminal
+				// event instead of reporting an incomplete stream so strict
+				// clients do not treat a complete generation as truncated.
+				if s.canSynthesizeCompletion() {
+					s.synthesizeCompletion()
+
+					return true
+				}
 				s.err = ErrStreamIncomplete
 			} else if !s.doneEmitted {
 				s.doneEmitted = true
@@ -807,6 +819,79 @@ func (s *responsesOutboundStream) Err() error {
 
 func (s *responsesOutboundStream) Close() error {
 	return s.stream.Close()
+}
+
+// canSynthesizeCompletion reports whether a clean EOF without a semantic
+// terminal event should still be treated as a successful completion. This is
+// true when the source ended without a transport error and the upstream
+// produced meaningful output (text, reasoning, tool calls, or usage) under a
+// known response ID. Some OpenAI-compatible Responses upstreams (e.g.
+// Bailian/DashScope compatible-mode) close the SSE stream cleanly without a
+// semantic terminal event or even a bare [DONE] marker; treating that as a
+// completed generation avoids surfacing a spurious truncation error to strict
+// clients. Genuinely truncated streams that end without meaningful output, or
+// without a response identity to attach the output to, still surface
+// ErrStreamIncomplete.
+func (s *responsesOutboundStream) canSynthesizeCompletion() bool {
+	if s.state.responseID == "" {
+		return false
+	}
+
+	// A bare usage blob is not evidence of a complete generation. A stream
+	// truncated before any content (e.g. only a response.id + usage) must be
+	// surfaced as ErrStreamIncomplete rather than promoted to an empty
+	// "completed" response, which would hide the truncation from the client.
+	return s.state.textContent.Len() > 0 ||
+		s.state.reasoningContent.Len() > 0 ||
+		len(s.state.toolCalls) > 0
+}
+
+// synthesizeCompletion emits the terminal finish chunk and usage (if any) the
+// way response.completed would, then marks the stream done. Callers invoke it
+// only after canSynthesizeCompletion returned true, i.e. the upstream already
+// delivered content and closed cleanly with a [DONE] marker.
+func (s *responsesOutboundStream) synthesizeCompletion() {
+	s.responseCompleted = true
+
+	finishReason := "stop"
+	if len(s.state.toolCalls) > 0 {
+		finishReason = "tool_calls"
+	}
+
+	finishChunk := &llm.Response{
+		Object:             "chat.completion.chunk",
+		ID:                 s.state.responseID,
+		Model:              s.state.responseModel,
+		Created:            s.state.created,
+		PreviousResponseID: s.state.previousResponseID,
+		Choices: []llm.Choice{
+			{
+				Index:        0,
+				Delta:        &llm.Message{},
+				FinishReason: &finishReason,
+			},
+		},
+	}
+	if len(s.state.transformerMetadata) > 0 && !s.state.transformerMetadataEmitted {
+		finishChunk.TransformerMetadata = s.state.transformerMetadata
+		s.state.transformerMetadataEmitted = true
+	}
+	s.enqueue(finishChunk)
+
+	if s.state.usage != nil {
+		s.enqueue(&llm.Response{
+			Object:             "chat.completion.chunk",
+			ID:                 s.state.responseID,
+			Model:              s.state.responseModel,
+			Created:            s.state.created,
+			PreviousResponseID: s.state.previousResponseID,
+			Choices:            []llm.Choice{},
+			Usage:              s.state.usage,
+		})
+	}
+
+	s.doneEmitted = true
+	s.enqueue(llm.DoneResponse)
 }
 
 // AggregateStreamChunks aggregates OpenAI Responses API streaming chunks into a complete response.

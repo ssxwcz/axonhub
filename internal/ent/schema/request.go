@@ -3,6 +3,7 @@ package schema
 import (
 	"entgo.io/contrib/entgql"
 	"entgo.io/ent"
+	"entgo.io/ent/dialect"
 	"entgo.io/ent/schema"
 	"entgo.io/ent/schema/edge"
 	"entgo.io/ent/schema/field"
@@ -28,6 +29,8 @@ func (Request) Indexes() []ent.Index {
 			StorageKey("requests_by_api_key_id_created_at"),
 		index.Fields("project_id", "created_at").
 			StorageKey("requests_by_project_id_created_at"),
+		index.Fields("project_id", "user_id", "created_at").
+			StorageKey("requests_by_project_id_user_id_created_at"),
 		index.Fields("channel_id", "created_at").
 			StorageKey("requests_by_channel_id_created_at"),
 		index.Fields("trace_id", "created_at").
@@ -44,6 +47,17 @@ func (Request) Fields() []ent.Field {
 			Optional().
 			Immutable().
 			Comment("API Key ID of the request, null for the request from the Admin."),
+		field.Int("user_id").
+			Optional().
+			Nillable().
+			Immutable().
+			Annotations(entgql.Skip(
+				entgql.SkipType,
+				entgql.SkipWhereInput,
+				entgql.SkipMutationCreateInput,
+				entgql.SkipMutationUpdateInput,
+			)).
+			Comment("User ID of the Playground request creator"),
 		field.Int("project_id").
 			Immutable().
 			Default(1).
@@ -88,7 +102,9 @@ func (Request) Fields() []ent.Field {
 		// External ID for tracking requests in external systems
 		field.String("external_id").
 			Optional().
-			MaxLen(512),
+			SchemaType(map[string]string{
+				dialect.MySQL: "text",
+			}),
 		// The status of the request.
 		field.Enum("status").Values("pending", "processing", "completed", "failed", "canceled"),
 		// Whether the request is a streaming request

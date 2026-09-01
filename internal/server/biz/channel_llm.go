@@ -496,20 +496,27 @@ func newProviderChatOutbound(
 ) (transformer.Outbound, bool, error) {
 	apiKeyProvider := getAPIKeyProvider(ch)
 
+	var reasoningEffortMapping []llm.ReasoningEffortMapping
+	if ch != nil && ch.Settings != nil {
+		reasoningEffortMapping = ch.Settings.TransformOptions.ReasoningEffortMapping
+	}
+
 	switch channelType {
 	case channel.TypeZai, channel.TypeZhipu, channel.TypeZhipuAnthropic, channel.TypeZaiAnthropic:
 		outbound, err := zai.NewOutboundTransformerWithConfig(&zai.Config{
-			BaseURL:        baseURL,
-			EndpointPath:   endpointPath,
-			APIKeyProvider: apiKeyProvider,
+			BaseURL:                baseURL,
+			EndpointPath:           endpointPath,
+			APIKeyProvider:         apiKeyProvider,
+			ReasoningEffortMapping: reasoningEffortMapping,
 		})
 		return outbound, true, err
 	case channel.TypeXiaomi, channel.TypeXiaomiAnthropic:
 		outbound, err := zai.NewOutboundTransformerWithConfig(&zai.Config{
-			BaseURL:        baseURL,
-			Version:        "v1",
-			EndpointPath:   endpointPath,
-			APIKeyProvider: apiKeyProvider,
+			BaseURL:                baseURL,
+			Version:                "v1",
+			EndpointPath:           endpointPath,
+			APIKeyProvider:         apiKeyProvider,
+			ReasoningEffortMapping: reasoningEffortMapping,
 		})
 		return outbound, true, err
 	case channel.TypeDoubao, channel.TypeVolcengine, channel.TypeDoubaoAnthropic, channel.TypeVolcengineAnthropic:

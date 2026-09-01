@@ -72,6 +72,20 @@ func (_c *RequestCreate) SetNillableAPIKeyID(v *int) *RequestCreate {
 	return _c
 }
 
+// SetUserID sets the "user_id" field.
+func (_c *RequestCreate) SetUserID(v int) *RequestCreate {
+	_c.mutation.SetUserID(v)
+	return _c
+}
+
+// SetNillableUserID sets the "user_id" field if the given value is not nil.
+func (_c *RequestCreate) SetNillableUserID(v *int) *RequestCreate {
+	if v != nil {
+		_c.SetUserID(*v)
+	}
+	return _c
+}
+
 // SetProjectID sets the "project_id" field.
 func (_c *RequestCreate) SetProjectID(v int) *RequestCreate {
 	_c.mutation.SetProjectID(v)
@@ -501,11 +515,6 @@ func (_c *RequestCreate) check() error {
 	if _, ok := _c.mutation.RequestBody(); !ok {
 		return &ValidationError{Name: "request_body", err: errors.New(`ent: missing required field "Request.request_body"`)}
 	}
-	if v, ok := _c.mutation.ExternalID(); ok {
-		if err := request.ExternalIDValidator(v); err != nil {
-			return &ValidationError{Name: "external_id", err: fmt.Errorf(`ent: validator failed for field "Request.external_id": %w`, err)}
-		}
-	}
 	if _, ok := _c.mutation.Status(); !ok {
 		return &ValidationError{Name: "status", err: errors.New(`ent: missing required field "Request.status"`)}
 	}
@@ -560,6 +569,10 @@ func (_c *RequestCreate) createSpec() (*Request, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.UpdatedAt(); ok {
 		_spec.SetField(request.FieldUpdatedAt, field.TypeTime, value)
 		_node.UpdatedAt = value
+	}
+	if value, ok := _c.mutation.UserID(); ok {
+		_spec.SetField(request.FieldUserID, field.TypeInt, value)
+		_node.UserID = &value
 	}
 	if value, ok := _c.mutation.Source(); ok {
 		_spec.SetField(request.FieldSource, field.TypeEnum, value)
@@ -1080,6 +1093,9 @@ func (u *RequestUpsertOne) UpdateNewValues() *RequestUpsertOne {
 		}
 		if _, exists := u.create.mutation.APIKeyID(); exists {
 			s.SetIgnore(request.FieldAPIKeyID)
+		}
+		if _, exists := u.create.mutation.UserID(); exists {
+			s.SetIgnore(request.FieldUserID)
 		}
 		if _, exists := u.create.mutation.ProjectID(); exists {
 			s.SetIgnore(request.FieldProjectID)
@@ -1624,6 +1640,9 @@ func (u *RequestUpsertBulk) UpdateNewValues() *RequestUpsertBulk {
 			}
 			if _, exists := b.mutation.APIKeyID(); exists {
 				s.SetIgnore(request.FieldAPIKeyID)
+			}
+			if _, exists := b.mutation.UserID(); exists {
+				s.SetIgnore(request.FieldUserID)
 			}
 			if _, exists := b.mutation.ProjectID(); exists {
 				s.SetIgnore(request.FieldProjectID)

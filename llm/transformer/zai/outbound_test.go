@@ -381,11 +381,124 @@ func TestOutboundTransformer_TransformRequest_ResponseFormat(t *testing.T) {
 	}
 }
 
-// TestOutboundTransformer_TransformRequest_URLOverrides covers the endpoint-level
-// URL conventions that must match the generic OpenAI transformer: custom endpoint
-// paths and the "##" raw-URL suffix. Custom chat endpoints on zhipu/zai family
-// channels are routed to this transformer, so a bare base URL like
-// https://open.bigmodel.cn/api/coding/paas/v4 must keep working.
+
+func TestOutboundTransformer_TransformRequest_GLM53NoneMapsToLow(t *testing.T) {
+	config := &Config{
+		BaseURL:        "https://api.zai.com",
+		APIKeyProvider: auth.NewStaticKeyProvider("test-api-key"),
+	}
+
+	transformer, err := NewOutboundTransformerWithConfig(config)
+	if err != nil {
+		t.Fatalf("Failed to create transformer: %v", err)
+	}
+
+	request := &llm.Request{
+		Model:           "glm-5.3-flash",
+		ReasoningEffort: "none",
+		Messages: []llm.Message{
+			{
+				Role: "user",
+				Content: llm.MessageContent{
+					Content: lo.ToPtr("Hello, world!"),
+				},
+			},
+		},
+	}
+
+	ctx := context.Background()
+	got, err := transformer.TransformRequest(ctx, request)
+
+	assert.NoError(t, err)
+	assert.NotNil(t, got)
+
+	var zaiReq Request
+	err = json.Unmarshal(got.Body, &zaiReq)
+	assert.NoError(t, err)
+	require.NotNil(t, zaiReq.Thinking)
+	assert.Equal(t, "enabled", zaiReq.Thinking.Type)
+	assert.Equal(t, "low", zaiReq.ReasoningEffort)
+}
+
+func TestOutboundTransformer_TransformRequest_GLM53ChannelMapping(t *testing.T) {
+	config := &Config{
+		BaseURL:        "https://api.zai.com",
+		APIKeyProvider: auth.NewStaticKeyProvider("test-api-key"),
+		ReasoningEffortMapping: []llm.ReasoningEffortMapping{
+			{From: "none", To: "low"},
+		},
+	}
+
+	transformer, err := NewOutboundTransformerWithConfig(config)
+	if err != nil {
+		t.Fatalf("Failed to create transformer: %v", err)
+	}
+
+	request := &llm.Request{
+		Model:           "glm-5.3",
+		ReasoningEffort: "none",
+		Messages: []llm.Message{
+			{
+				Role: "user",
+				Content: llm.MessageContent{
+					Content: lo.ToPtr("Hello, world!"),
+				},
+			},
+		},
+	}
+
+	ctx := context.Background()
+	got, err := transformer.TransformRequest(ctx, request)
+
+	assert.NoError(t, err)
+	assert.NotNil(t, got)
+
+	var zaiReq Request
+	err = json.Unmarshal(got.Body, &zaiReq)
+	assert.NoError(t, err)
+	require.NotNil(t, zaiReq.Thinking)
+	assert.Equal(t, "enabled", zaiReq.Thinking.Type)
+	assert.Equal(t, "low", zaiReq.ReasoningEffort)
+}
+
+func TestOutboundTransformer_TransformRequest_NonGLMStripsReasoningEffort(t *testing.T) {
+	config := &Config{
+		BaseURL:        "https://api.zai.com",
+		APIKeyProvider: auth.NewStaticKeyProvider("test-api-key"),
+	}
+
+	transformer, err := NewOutboundTransformerWithConfig(config)
+	if err != nil {
+		t.Fatalf("Failed to create transformer: %v", err)
+	}
+
+	request := &llm.Request{
+		Model:           "gpt-4",
+		ReasoningEffort: "high",
+		Messages: []llm.Message{
+			{
+				Role: "user",
+				Content: llm.MessageContent{
+					Content: lo.ToPtr("Hello, world!"),
+				},
+			},
+		},
+	}
+
+	ctx := context.Background()
+	got, err := transformer.TransformRequest(ctx, request)
+
+	assert.NoError(t, err)
+	assert.NotNil(t, got)
+
+	var zaiReq Request
+	err = json.Unmarshal(got.Body, &zaiReq)
+	assert.NoError(t, err)
+	require.NotNil(t, zaiReq.Thinking)
+	assert.Equal(t, "enabled", zaiReq.Thinking.Type)
+	assert.Equal(t, "", zaiReq.ReasoningEffort)
+}
+
 func TestOutboundTransformer_TransformRequest_URLOverrides(t *testing.T) {
 	newRequest := func() *llm.Request {
 		return &llm.Request{

@@ -24,6 +24,8 @@ const (
 	FieldUpdatedAt = "updated_at"
 	// FieldAPIKeyID holds the string denoting the api_key_id field in the database.
 	FieldAPIKeyID = "api_key_id"
+	// FieldUserID holds the string denoting the user_id field in the database.
+	FieldUserID = "user_id"
 	// FieldProjectID holds the string denoting the project_id field in the database.
 	FieldProjectID = "project_id"
 	// FieldTraceID holds the string denoting the trace_id field in the database.
@@ -143,6 +145,7 @@ var Columns = []string{
 	FieldCreatedAt,
 	FieldUpdatedAt,
 	FieldAPIKeyID,
+	FieldUserID,
 	FieldProjectID,
 	FieldTraceID,
 	FieldDataStorageID,
@@ -196,8 +199,6 @@ var (
 	DefaultProjectID int
 	// DefaultFormat holds the default value on creation for the "format" field.
 	DefaultFormat string
-	// ExternalIDValidator is a validator for the "external_id" field. It is called by the builders before save.
-	ExternalIDValidator func(string) error
 	// DefaultStream holds the default value on creation for the "stream" field.
 	DefaultStream bool
 	// DefaultClientIP holds the default value on creation for the "client_ip" field.
@@ -280,6 +281,11 @@ func ByUpdatedAt(opts ...sql.OrderTermOption) OrderOption {
 // ByAPIKeyID orders the results by the api_key_id field.
 func ByAPIKeyID(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldAPIKeyID, opts...).ToFunc()
+}
+
+// ByUserID orders the results by the user_id field.
+func ByUserID(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldUserID, opts...).ToFunc()
 }
 
 // ByProjectID orders the results by the project_id field.

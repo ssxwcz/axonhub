@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"testing"
+	"time"
 
 	"github.com/samber/lo"
 	"github.com/stretchr/testify/require"
@@ -25,6 +27,7 @@ import (
 	"github.com/looplj/axonhub/llm/pipeline/cc"
 	"github.com/looplj/axonhub/llm/streams"
 	"github.com/looplj/axonhub/llm/transformer"
+	responses "github.com/looplj/axonhub/llm/transformer/openai/responses"
 )
 
 // mockTransformer is a simple mock transformer for testing.
@@ -834,6 +837,9 @@ func (s *sliceEventStream) Close() error {
 	return nil
 }
 
+// TestOutboundPersistentStream_Close_AggregatedResponsesCompletionHandling
+// verifies that aggregated Responses chunks and terminal events produce the
+// correct request execution completion status.
 func TestOutboundPersistentStream_Close_AggregatedResponsesCompletionHandling(t *testing.T) {
 	ctx := context.Background()
 	ctx = authz.WithTestBypass(ctx)
@@ -902,6 +908,63 @@ func TestOutboundPersistentStream_Close_AggregatedResponsesCompletionHandling(t 
 
 		// Incomplete streams must still persist buffered chunks for debugging.
 		require.Len(t, dbExec.ResponseChunks, 1, "failed execution should keep response_chunks in DB")
+	})
+	t.Run("response failure terminal is not completed", func(t *testing.T) {
+		client := enttest.NewEntClient(t, "sqlite3", "file:ent?mode=memory&_fk=0")
+		defer client.Close()
+
+		ctx := ent.NewContext(ctx, client)
+		project := createTestProject(t, ctx, client)
+		ch := createTestChannel(t, ctx, client)
+		_, requestService, _, usageLogService := setupTestServices(t, client)
+
+		req, err := client.Request.Create().
+			SetProjectID(project.ID).
+			SetChannelID(ch.ID).
+			SetModelID("gpt-4.1").
+			SetStatus(request.StatusPending).
+			SetRequestBody([]byte(`{"stream":true}`)).
+			Save(ctx)
+		require.NoError(t, err)
+
+		exec, err := client.RequestExecution.Create().
+			SetRequestID(req.ID).
+			SetProjectID(project.ID).
+			SetChannelID(ch.ID).
+			SetModelID("gpt-4.1").
+			SetRequestBody([]byte(`{"stream":true}`)).
+			SetFormat("openai/responses").
+			SetStatus(requestexecution.StatusPending).
+			SetStream(true).
+			Save(ctx)
+		require.NoError(t, err)
+
+		stream := &sliceEventStream{
+			events: []*httpclient.StreamEvent{{
+				Type: "response.failed",
+				Data: []byte(`{"type":"response.failed","response":{"id":"resp_failed","status":"failed"}}`),
+			}},
+		}
+		transformer := &mockTransformer{
+			apiFormat:          llm.APIFormatOpenAIResponse,
+			aggregatedResponse: []byte(`{"id":"resp_failed","status":"completed"}`),
+			aggregatedMeta: llm.ResponseMeta{
+				ID:    "resp_failed",
+				Usage: &llm.Usage{CompletionTokens: 1},
+			},
+		}
+		state := &PersistenceState{}
+
+		persistentStream := NewOutboundPersistentStream(ctx, stream, req, exec, requestService, usageLogService, transformer, nil, state)
+		require.True(t, persistentStream.Next())
+		_ = persistentStream.Current()
+		require.False(t, state.StreamCompleted)
+		require.NoError(t, persistentStream.Close())
+
+		dbExec, err := client.RequestExecution.Get(ctx, exec.ID)
+		require.NoError(t, err)
+		require.Equal(t, requestexecution.StatusFailed, dbExec.Status)
+		require.NotEqual(t, requestexecution.StatusCompleted, dbExec.Status)
 	})
 
 	t.Run("aggregated completed response without terminal event is completed", func(t *testing.T) {
@@ -1406,4 +1469,162 @@ func TestPersistentOutboundTransformer_CanRetry_429_WithMultipleModels(t *testin
 		// Should skip retry even though there are more models
 		require.False(t, outbound.CanRetry(httpErr))
 	})
+}
+
+// A transport failure after content was delivered must keep the latency metrics that
+// were already captured and persist a classified error, so operators can tell "stalled
+// before the first byte" from "cut after N tokens" and the status code is not lost.
+func TestOutboundPersistentStream_Close_TransportErrorKeepsMetricsAndClassifiesError(t *testing.T) {
+	ctx := authz.WithTestBypass(context.Background())
+
+	client := enttest.NewEntClient(t, "sqlite3", "file:ent?mode=memory&_fk=0")
+	defer client.Close()
+
+	ctx = ent.NewContext(ctx, client)
+	project := createTestProject(t, ctx, client)
+	ch := createTestChannel(t, ctx, client)
+	_, requestService, _, usageLogService := setupTestServices(t, client)
+
+	req, err := client.Request.Create().
+		SetProjectID(project.ID).
+		SetChannelID(ch.ID).
+		SetModelID("gpt-4.1").
+		SetStatus(request.StatusPending).
+		SetRequestBody([]byte(`{"stream":true}`)).
+		Save(ctx)
+	require.NoError(t, err)
+
+	exec, err := client.RequestExecution.Create().
+		SetRequestID(req.ID).
+		SetProjectID(project.ID).
+		SetChannelID(ch.ID).
+		SetModelID("gpt-4.1").
+		SetRequestBody([]byte(`{"stream":true}`)).
+		SetFormat("openai/chat_completions").
+		SetStatus(requestexecution.StatusPending).
+		SetStream(true).
+		Save(ctx)
+	require.NoError(t, err)
+
+	stream := &sliceEventStream{
+		events: []*httpclient.StreamEvent{
+			{Data: []byte(`{"id":"1","choices":[{"delta":{"content":"He"}}]}`)},
+		},
+		err: fmt.Errorf("read body: %w", io.ErrUnexpectedEOF),
+	}
+
+	start := time.Now().Add(-1500 * time.Millisecond)
+	firstToken := start.Add(400 * time.Millisecond)
+	perf := &biz.PerformanceRecord{StartTime: start, FirstTokenTime: &firstToken, Stream: true}
+	transformer := &mockTransformer{apiFormat: llm.APIFormatOpenAIResponse}
+
+	persistentStream := NewOutboundPersistentStream(ctx, stream, req, exec, requestService, usageLogService, transformer, perf, &PersistenceState{})
+	for persistentStream.Next() {
+		_ = persistentStream.Current()
+	}
+	require.NoError(t, persistentStream.Close())
+
+	dbExec, err := client.RequestExecution.Get(ctx, exec.ID)
+	require.NoError(t, err)
+	require.Equal(t, requestexecution.StatusFailed, dbExec.Status)
+	require.Contains(t, dbExec.ErrorMessage, "Upstream provider closed the connection before the response completed")
+	require.Contains(t, dbExec.ErrorMessage, "unexpected EOF")
+	require.NotNil(t, dbExec.ResponseStatusCode)
+	require.Equal(t, http.StatusBadGateway, *dbExec.ResponseStatusCode)
+	require.NotNil(t, dbExec.MetricsFirstTokenLatencyMs)
+	require.Equal(t, int64(400), *dbExec.MetricsFirstTokenLatencyMs)
+	require.NotNil(t, dbExec.MetricsLatencyMs)
+	require.GreaterOrEqual(t, *dbExec.MetricsLatencyMs, int64(1500))
+}
+
+// TestOutboundPersistentStream_ResponsesCleanEOFWithOutputIsCompleted wires the
+// real OpenAI Responses aggregator through the orchestrator persistence stream:
+// an upstream that closes cleanly after delivering output (no response.completed,
+// no [DONE], no usage) must be treated as a completed execution rather than
+// reported as "stream ended without terminal event or completed response".
+func TestOutboundPersistentStream_ResponsesCleanEOFWithOutputIsCompleted(t *testing.T) {
+	client := enttest.NewEntClient(t, "sqlite3", "file:ent?mode=memory&_fk=0")
+	defer client.Close()
+
+	ctx := authz.WithTestBypass(context.Background())
+	ctx = ent.NewContext(ctx, client)
+	project := createTestProject(t, ctx, client)
+	ch := createTestChannel(t, ctx, client)
+	_, requestService, _, usageLogService := setupTestServices(t, client)
+
+	req, err := client.Request.Create().
+		SetProjectID(project.ID).
+		SetChannelID(ch.ID).
+		SetModelID("qwen3.8-max").
+		SetStatus(request.StatusPending).
+		SetRequestBody([]byte(`{"stream":true}`)).
+		Save(ctx)
+	require.NoError(t, err)
+
+	exec, err := client.RequestExecution.Create().
+		SetRequestID(req.ID).
+		SetProjectID(project.ID).
+		SetChannelID(ch.ID).
+		SetModelID("qwen3.8-max").
+		SetRequestBody([]byte(`{"stream":true}`)).
+		SetFormat("openai/responses").
+		SetStatus(requestexecution.StatusPending).
+		SetStream(true).
+		Save(ctx)
+	require.NoError(t, err)
+
+	// Bailian/DashScope compatible-mode closes cleanly after deltas: no
+	// response.completed, no [DONE], no usage.
+	chunks := []*httpclient.StreamEvent{
+		{Type: "response.created", LastEventID: "", Size: 0, Data: []byte(`{"type":"response.created","response":{"id":"resp_clean_eof","object":"response","created_at":1700000000,"model":"qwen3.8-max","status":"in_progress","output":[]}}`)},
+		{Type: "response.output_item.added", LastEventID: "", Size: 0, Data: []byte(`{"type":"response.output_item.added","output_index":0,"item":{"id":"msg_1","type":"message","status":"in_progress","role":"assistant"}}`)},
+		{Type: "response.content_part.added", LastEventID: "", Size: 0, Data: []byte(`{"type":"response.content_part.added","item_id":"msg_1","output_index":0,"content_index":0,"part":{"type":"output_text","text":""}}`)},
+		{Type: "response.output_text.delta", LastEventID: "", Size: 0, Data: []byte(`{"type":"response.output_text.delta","item_id":"msg_1","output_index":0,"content_index":0,"delta":"你好"}`)},
+	}
+	transformer, err := responses.NewOutboundTransformer("https://api.example.com/v1", "test-api-key")
+	require.NoError(t, err)
+
+	state := &PersistenceState{
+		APIKey:                  nil,
+		RequestService:          nil,
+		UsageLogService:         nil,
+		ChannelService:          nil,
+		PromptProvider:          nil,
+		PromptProtecter:         nil,
+		RetryPolicyProvider:     nil,
+		CandidateSelector:       nil,
+		LoadBalancers:           nil,
+		RoutingPolicy:           EffectiveRoutingPolicy{LoadBalancerStrategy: "", TraceStickyMode: ""},
+		ModelMapper:             nil,
+		Proxy:                   nil,
+		OriginalModel:           "",
+		RawRequest:              nil,
+		LlmRequest:              nil,
+		OriginalRequestStream:   nil,
+		Request:                 nil,
+		RequestExec:             nil,
+		ChannelModelsCandidates: nil,
+		CurrentCandidateIndex:   0,
+		CurrentCandidate:        nil,
+		CurrentModelIndex:       0,
+		Perf:                    nil,
+		StreamCompleted:         false,
+		RawProviderResponse:     nil,
+		RawProviderRequest:      nil,
+		RawStreamCh:             nil,
+		RawStreamErrRef:         nil,
+		RawStreamCancel:         nil,
+		PassThroughApplied:      false,
+	}
+	persistentStream := NewOutboundPersistentStream(ctx, streams.SliceStream(chunks), req, exec, requestService, usageLogService, transformer, nil, state)
+	for persistentStream.Next() {
+		_ = persistentStream.Current()
+	}
+	require.NoError(t, persistentStream.Close())
+
+	dbExec, err := client.RequestExecution.Get(ctx, exec.ID)
+	require.NoError(t, err)
+	require.Equal(t, requestexecution.StatusCompleted, dbExec.Status)
+	require.Empty(t, dbExec.ErrorMessage)
+	require.True(t, state.StreamCompleted)
 }
