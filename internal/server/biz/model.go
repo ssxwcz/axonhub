@@ -407,22 +407,31 @@ func (svc *ModelService) BulkCreateModels(ctx context.Context, inputs []*ent.Cre
 		inputMap[key] = true
 	}
 
-	// Check if any models already exist
-	existingModels, err := svc.entFromContext(ctx).Model.Query().
-		Where(func(s *sql.Selector) {
-			var predicates []*sql.Predicate
-			for _, input := range inputs {
-				predicates = append(predicates, sql.And(
-					sql.EQ(model.FieldDeveloper, input.Developer),
-					sql.EQ(model.FieldModelID, input.ModelID),
-				))
-			}
+	// Check if any models already exist (chunk inputs to avoid SQLite variable limit;
+	// each predicate uses 2 variables: developer + modelID).
+	chunkSize := SQLiteMaxVariableLimit / 2
 
-			s.Where(sql.Or(predicates...))
-		}).
-		All(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to check existing models: %w", err)
+	var existingModels []*ent.Model
+
+	for _, chunk := range lo.Chunk(inputs, chunkSize) {
+		chunkModels, err := svc.entFromContext(ctx).Model.Query().
+			Where(func(s *sql.Selector) {
+				var predicates []*sql.Predicate
+				for _, input := range chunk {
+					predicates = append(predicates, sql.And(
+						sql.EQ(model.FieldDeveloper, input.Developer),
+						sql.EQ(model.FieldModelID, input.ModelID),
+					))
+				}
+
+				s.Where(sql.Or(predicates...))
+			}).
+			All(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to check existing models: %w", err)
+		}
+
+		existingModels = append(existingModels, chunkModels...)
 	}
 
 	if len(existingModels) > 0 {
@@ -518,51 +527,63 @@ func (svc *ModelService) DeleteModel(ctx context.Context, id int) error {
 }
 
 // BulkArchiveModels archives multiple models by their IDs.
+// IDs are chunked to avoid SQLite "too many SQL variables" error.
 func (svc *ModelService) BulkArchiveModels(ctx context.Context, ids []int) error {
-	_, err := svc.entFromContext(ctx).Model.Update().
-		Where(model.IDIn(ids...)).
-		SetStatus(model.StatusArchived).
-		Save(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to bulk archive models: %w", err)
+	for _, chunk := range lo.Chunk(ids, SQLiteMaxVariableLimit) {
+		_, err := svc.entFromContext(ctx).Model.Update().
+			Where(model.IDIn(chunk...)).
+			SetStatus(model.StatusArchived).
+			Save(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to bulk archive models: %w", err)
+		}
 	}
 
 	return nil
 }
 
 // BulkDisableModels disables multiple models by their IDs.
+// IDs are chunked to avoid SQLite "too many SQL variables" error.
 func (svc *ModelService) BulkDisableModels(ctx context.Context, ids []int) error {
-	_, err := svc.entFromContext(ctx).Model.Update().
-		Where(model.IDIn(ids...)).
-		SetStatus(model.StatusDisabled).
-		Save(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to bulk disable models: %w", err)
+	for _, chunk := range lo.Chunk(ids, SQLiteMaxVariableLimit) {
+		_, err := svc.entFromContext(ctx).Model.Update().
+			Where(model.IDIn(chunk...)).
+			SetStatus(model.StatusDisabled).
+			Save(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to bulk disable models: %w", err)
+		}
 	}
 
 	return nil
 }
 
 // BulkEnableModels enables multiple models by their IDs.
+// IDs are chunked to avoid SQLite "too many SQL variables" error.
 func (svc *ModelService) BulkEnableModels(ctx context.Context, ids []int) error {
-	_, err := svc.entFromContext(ctx).Model.Update().
-		Where(model.IDIn(ids...)).
-		SetStatus(model.StatusEnabled).
-		Save(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to bulk enable models: %w", err)
+	for _, chunk := range lo.Chunk(ids, SQLiteMaxVariableLimit) {
+		_, err := svc.entFromContext(ctx).Model.Update().
+			Where(model.IDIn(chunk...)).
+			SetStatus(model.StatusEnabled).
+			Save(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to bulk enable models: %w", err)
+		}
 	}
 
 	return nil
 }
 
 // BulkDeleteModels deletes multiple models by their IDs.
+// IDs are chunked to avoid SQLite "too many SQL variables" error.
 func (svc *ModelService) BulkDeleteModels(ctx context.Context, ids []int) error {
-	_, err := svc.entFromContext(ctx).Model.Delete().
-		Where(model.IDIn(ids...)).
-		Exec(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to bulk delete models: %w", err)
+	for _, chunk := range lo.Chunk(ids, SQLiteMaxVariableLimit) {
+		_, err := svc.entFromContext(ctx).Model.Delete().
+			Where(model.IDIn(chunk...)).
+			Exec(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to bulk delete models: %w", err)
+		}
 	}
 
 	return nil
