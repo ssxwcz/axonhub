@@ -9,6 +9,7 @@ import (
 	"github.com/samber/lo"
 	"github.com/stretchr/testify/require"
 
+	"github.com/looplj/axonhub/internal/authz"
 	"github.com/looplj/axonhub/internal/ent"
 	"github.com/looplj/axonhub/internal/ent/channel"
 	"github.com/looplj/axonhub/internal/ent/enttest"
@@ -120,4 +121,56 @@ func TestBuildChannelWithOutbounds_FamilyRoutingOnCustomChatEndpoints(t *testing
 		// Generic openai normalization appends /v1, which is correct for v1 APIs.
 		require.Equal(t, "https://api.example.com/v1/chat/completions", url)
 	})
+}
+
+// TestOpenCodeGoOutboundsCarrySessionHeader asserts that every outbound
+// surface of the dedicated OpenCode Go channels sends the x-opencode-session
+// header. opencode_go_responses channels may expose extra chat and anthropic
+// endpoints through user endpoints; each of those non-default outbounds must
+// be wrapped with the session-header decorator too.
+func TestOpenCodeGoOutboundsCarrySessionHeader(t *testing.T) {
+	client := enttest.NewEntClient(t, "sqlite3", "file:opencode_session_header?mode=memory&_fk=0")
+	t.Cleanup(func() { client.Close() })
+
+	svc := NewChannelServiceForTest(client)
+	ctx := authz.WithTestBypass(context.Background())
+
+	entChannel := client.Channel.Create().
+		SetName("OpenCode Go Response").
+		SetType(channel.TypeOpencodeGoResponses).
+		SetBaseURL("https://opencode.ai/zen/go").
+		SetCredentials(objects.ChannelCredentials{APIKey: "test-key"}).
+		SetSupportedModels([]string{"deepseek-v4-flash"}).
+		SetDefaultTestModel("deepseek-v4-flash").
+		SetEndpoints([]objects.ChannelEndpoint{
+			{APIFormat: llm.APIFormatOpenAIChatCompletion.String()},
+			{APIFormat: llm.APIFormatAnthropicMessage.String()},
+		}).
+		SaveX(ctx)
+
+	built, err := svc.buildChannelWithOutbounds(entChannel)
+	require.NoError(t, err)
+	require.NotNil(t, built)
+
+	formats := []string{
+		llm.APIFormatOpenAIResponse.String(),
+		llm.APIFormatOpenAIChatCompletion.String(),
+		llm.APIFormatAnthropicMessage.String(),
+	}
+
+	for _, format := range formats {
+		out, err := BuildOutboundByAPIFormat(built, format)
+		require.NoError(t, err, "format %s should resolve to an outbound", format)
+
+		httpReq, err := out.TransformRequest(context.Background(), &llm.Request{
+			Model: "deepseek-v4-flash",
+			Messages: []llm.Message{
+				{Role: "user", Content: llm.MessageContent{Content: lo.ToPtr("Hello")}},
+			},
+		})
+		require.NoError(t, err, "format %s TransformRequest should succeed", format)
+		require.NotNil(t, httpReq)
+		require.NotEmpty(t, httpReq.Headers.Get("X-Opencode-Session"),
+			"format %s outbound must set x-opencode-session header", format)
+	}
 }
