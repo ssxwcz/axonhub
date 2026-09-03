@@ -713,6 +713,7 @@ export function ChannelsActionDialog({ currentRow, duplicateFromRow, open, onOpe
               defaultTestModel: duplicateFromRow.defaultTestModel,
               tags: duplicateFromRow.tags || [],
               remark: duplicateFromRow.remark || '',
+              endpoints: duplicateFromRow.endpoints,
               settings: duplicateFromRow.settings ?? undefined,
               credentials: {
                 // OAuth 类型的凭据存储在 apiKey 字段，不放入 apiKeys
