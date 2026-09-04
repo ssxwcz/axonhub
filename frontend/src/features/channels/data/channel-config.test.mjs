@@ -126,6 +126,7 @@ test('OpenCode Go exposes an OpenAI Responses channel variant', () => {
   for (const locale of ['en', 'zh-CN']) {
     const messages = parseLocale(locale);
     assert.equal(messages['channels.types.opencode_go_responses'], 'OpenCode Go (Responses)');
+  }
 });
 
 test('channel table shows provider quota only for OAuth channel types', () => {
@@ -155,6 +156,7 @@ test('channel table shows provider quota only for OAuth channel types', () => {
     channelColumns,
     /if\s*\(!OAUTH_CHANNEL_TYPES\.has\(channel\.type\)\)[\s\S]*?>-<\/span>/,
     'non-OAuth channels should display a dash'
+  );
 });
 
 
