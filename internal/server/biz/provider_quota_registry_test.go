@@ -55,6 +55,7 @@ func TestProviderQuotaService_RegistryCoverageMatrix(t *testing.T) {
 		{"apertis", channel.TypeOpenaiResponses, "https://api.apertis.ai"},
 		{"opencode_go", channel.TypeOpencodeGo, ""},
 		{"opencode_go", channel.TypeOpencodeGoAnthropic, ""},
+		{"opencode_go", channel.TypeOpencodeGoResponses, ""},
 		{"kimi_code", channel.TypeMoonshotCoding, ""},
 		{"minimax", channel.TypeMinimax, ""},
 		{"minimax", channel.TypeMinimaxAnthropic, ""},
