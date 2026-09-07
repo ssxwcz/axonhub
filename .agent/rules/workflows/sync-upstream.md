@@ -1,34 +1,41 @@
 ---
-description: "Fork maintenance workflow: sync upstream, own features on separate branches, commit attribution and signing"
+description: "Fork maintenance workflow: rebase-sync upstream, own features on separate branches, commit attribution and signing"
 ---
 
 # Fork Maintenance Workflow (follow upstream + own changes)
 
-This fork (`ssxwcz/axonhub`) follows upstream `looplj/axonhub` closely while carrying a few own changes. The previous manual-PR-merge workflow was archived at tag `archive/review-upstream-prs`.
+This fork (`ssxwcz/axonhub`) follows upstream `looplj/axonhub` closely while carrying a few own changes. The previous manual-PR-merge workflow was archived at tag `archive/review-upstream-prs`; the merge-based sync was retired on 2026-09-07 (history rebuilt linearly at `v1.0.0-beta10`, pre-rebuild history kept on `backup/unstable-merges`).
 
 ## 0. Maintenance model (how this fork is kept)
 
-- **`unstable` = the follow-upstream mainline.** It equals upstream plus a small, stable set of own changes. Do own work in separate branches, not directly on `unstable`.
-- **Sync upstream instead of manually merging PRs.** Upstream merges PRs on its own; you get them for free via sync. Do **not** re-implement upstream PRs by hand.
+- **`unstable` = the follow-upstream mainline.** It equals upstream plus a small, stable set of own changes, replayed as plain commits — **never merge commits**. Do own work in separate branches, not directly on `unstable`.
+- **Sync upstream with rebase, not merge.** Merge commits permanently inflate the GitHub "ahead of looplj:unstable" listing and never go away; rebase keeps the ahead list equal to the real fork-only commits. Upstream merges PRs on its own; you get them for free via sync. Do **not** re-implement upstream PRs by hand.
   ```bash
-  git checkout unstable && git pull origin unstable
-  git fetch upstream && git merge upstream/unstable
-  # resolve conflicts, build + test, then
-  git push origin unstable
+  git checkout unstable && git fetch upstream
+  git rebase upstream/unstable
+  # resolve conflicts toward upstream for duplicated features,
+  # keep fork-only files (see the list below), then:
+  # re-sign if the rebase dropped signatures (see section 4), build + test, then
+  git push origin unstable --force-with-lease
   ```
+  - Rebase automatically drops leftover merge commits and keeps history linear.
+  - After the rebase, verify `git rev-list --count --merges upstream/unstable..unstable` is 0.
+  - `--force-with-lease` is safe here: this fork has no collaborators and no protected branches.
 - **If you need an upstream PR that is not merged yet**, `git cherry-pick` its commit onto your branch (keeps the original author), and note the source in the message (`from upstream PR NNNN`). When upstream later merges the same PR, sync aligns the content.
 - **Own features and small fixes** are committed directly on `unstable` (sync it first, then `git commit -S && git push origin unstable`). Do **not** open PRs for own changes — this fork has no collaborators and no protected branches. Only use a PR when an external review is explicitly wanted.
 - **Own changes that stay on `unstable`** (re-apply if a sync conflict drops them):
   - `.goreleaser.yml` — homebrew `brews` section removed (upstream tap cannot be written by this fork's token)
   - `docker-publish.yml`, `docker-unstable.yml` — publish to `ghcr.io/<owner>/axonhub` (GHCR, `GITHUB_TOKEN`)
-  - `.agent/rules/workflows/merge-upstream-prs.md` — this doc
-  - `internal/build/VERSION` — keep aligned with the deployed release (currently `v1.0.0-beta9`)
+  - `.agent/rules/workflows/sync-upstream.md` — this doc
+  - `internal/build/VERSION` — keep aligned with the deployed release (currently `v1.0.0-beta10`)
   - frontend price trim incl. schedule overrides in `channels-model-price-dialog.tsx`
+  - `opencode_go_responses` channel type + session-header decorator in `llm/transformer/opencode/session.go` (fork keeps dedicated channel variants instead of the upstream model-routing `outbound.go`)
 - **Release**: from `unstable`, tag `v<version>` — triggers the Release (binaries) and Docker image workflows (GHCR). Never commit auto-linkable refs.
+  - Rewriting `unstable` after a release requires re-pointing the tag (`git -c tag.gpgsign=false tag -f ...` + `git push origin <tag> --force`) and re-running the Release/Docker workflows; keep the GitHub release in draft until binaries are rebuilt.
 
 ## 1. Commit message format (Google style) — MANDATORY for every commit
 
-Every commit in this fork — normal commits, cherry-picks, merges, and squash PRs — must follow the [Google commit-message guidelines](https://google.github.io/eng-practices/review/developer/cl-descriptions.html):
+Every commit in this fork — normal commits, cherry-picks, and squash PRs — must follow the [Google commit-message guidelines](https://google.github.io/eng-practices/review/developer/cl-descriptions.html):
 
 1. **Separate subject from body with a blank line.**
 2. **Limit the subject line to 50 characters.** Subject format: `type(scope): imperative summary` (type: `feat`, `fix`, `chore`, `docs`, `refactor`, `test`, `ci`).
@@ -46,24 +53,13 @@ set up and error-prone. Add bulk import/export so operators can migrate
 prices across channels or from spreadsheets.
 ```
 
-Example (sync merge):
-```
-Merge upstream/unstable into fork unstable
-
-Bring in 9 upstream commits: prompt cache key, price trim/export,
-viewport floor, model developers data, SQLite rebuild fix, 100-row
-pagination, clipboard copy, and ordering weight validation. Duplicate
-PR conflicts were resolved toward upstream; local zai GLM-5.2/5.3
-thinking tests were kept because upstream has no equivalent yet.
-```
-
-Example (squash PR):
+Example (sync rebase):
 ```
 feat: integrate upstream PRs and review fixes into unstable
 
-Merge 20 reviewed upstream PRs plus review fixes as one integration
-commit. Full per-PR history (original authors and GPG signatures) is
-preserved on the source branch. [group the included PRs and why]
+Rebase onto upstream/unstable, bringing in the latest releases and
+resolving conflicts toward upstream while keeping the fork-only
+channel and build changes. Linear history: no merge commits.
 ```
 
 ## 2. PR / Issue References (avoid auto-linking)
@@ -112,6 +108,6 @@ preserved on the source branch. [group the included PRs and why]
 
 ## 8. Landing own work (no PRs)
 
-- Commit own fixes/features directly to `unstable`: sync upstream first (`git merge upstream/unstable`), then commit and push.
+- Commit own fixes/features directly to `unstable`: sync upstream first (rebase per section 0), then commit and push.
 - Only open a PR when an external review is explicitly requested; otherwise never — this fork has no branch protection.
-- Merge commits from upstream sync keep `Merge upstream/unstable into fork unstable` style subjects.
+- Do not create merge commits anywhere on `unstable` (including local branch merges before push) — they leak into the GitHub ahead-of-upstream listing.
