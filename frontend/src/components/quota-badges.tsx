@@ -173,6 +173,10 @@ function isOpenaiType(t: string): t is 'openai' | 'openai_responses' {
   return t === 'openai' || t === 'openai_responses';
 }
 
+function isOpenCodeGoType(t: string): t is 'opencode_go' | 'opencode_go_anthropic' | 'opencode_go_responses' {
+  return t === 'opencode_go' || t === 'opencode_go_anthropic' || t === 'opencode_go_responses';
+}
+
 function isCommandCodeType(t: string): t is 'commandcode' | 'commandcode_anthropic' {
   return t === 'commandcode' || t === 'commandcode_anthropic';
 }
@@ -291,7 +295,7 @@ function getChannelPercentage(channel: ProviderQuotaChannel): number | undefined
     if (qd.windows?.dailyInputTokens) maxPercent = Math.max(maxPercent, (qd.windows.dailyInputTokens.percentUsed ?? 0) * 100);
     if (qd.windows?.dailyImages) maxPercent = Math.max(maxPercent, (qd.windows.dailyImages.percentUsed ?? 0) * 100);
     percentage = maxPercent;
-  } else if (channel.type === 'opencode_go' || channel.type === 'opencode_go_anthropic') {
+  } else if (isOpenCodeGoType(channel.type)) {
     percentage = Math.max(0, ...channel.quotaStatus.limits.map((limit) => limit.usageRatio * 100));
   } else if (isOllamaType(channel.type)) {
     const qd = channel.quotaStatus.quotaData as ProviderOllamaQuotaData | undefined;
@@ -1812,7 +1816,7 @@ function QuotaRow({
       {/* One key has nothing to compare: keep that channel's native window rows. */}
       {quota.apiKeyQuotas.length > 1 && <APIKeyQuotaList accounts={quota.apiKeyQuotas} formatTimeToReset={formatTimeToReset} />}
 
-      {quota.apiKeyQuotas.length < 2 && (channel.type === 'opencode_go' || channel.type === 'opencode_go_anthropic') && (
+      {quota.apiKeyQuotas.length < 2 && isOpenCodeGoType(channel.type) && (
         <div className='mt-3 space-y-3'>
           {(() => {
             // OpenCode Go renders from the normalized limits: its checker maps
@@ -3182,7 +3186,7 @@ function getChannelCategory(channel: ProviderQuotaChannel, t: TranslateFn): Quot
   if (isZenmuxType(channelType)) {
     return { key: 'zenmux', label: 'ZenMux' };
   }
-  if (channelType === 'opencode_go' || channelType === 'opencode_go_anthropic') {
+  if (isOpenCodeGoType(channelType)) {
     return { key: 'opencode_go', label: t('channels.types.opencode_go') || 'OpenCode Go' };
   }
   if (isOpenaiType(channelType)) {

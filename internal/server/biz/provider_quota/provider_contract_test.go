@@ -168,6 +168,7 @@ func TestQuotaCheckerCoverageMatrix(t *testing.T) {
 		{"apertis", channel.TypeOpenaiResponses, "https://api.apertis.ai", "apertis_limits", 1},
 		{"opencode_go", channel.TypeOpencodeGo, "", "opencode_go_windows", 3},
 		{"opencode_go", channel.TypeOpencodeGoAnthropic, "", "opencode_go_windows", 3},
+		{"opencode_go", channel.TypeOpencodeGoResponses, "", "opencode_go_windows", 3},
 		{"kimi_code", channel.TypeMoonshotCoding, "", "kimi_windows", 2},
 		{"minimax", channel.TypeMinimax, "", "minimax_windows", 2},
 		{"minimax", channel.TypeMinimaxAnthropic, "", "minimax_windows", 2},
