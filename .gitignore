@@ -169,3 +169,9 @@ config.schema.json
 .ace-tool/
 .omx/
 deploy_dev.sh
+
+# CodeGraph local index
+.codegraph/
+
+# cortexkit / magic-context local data
+.cortexkit/
