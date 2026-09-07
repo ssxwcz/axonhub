@@ -94,7 +94,7 @@ func (c *OpenCodeGoQuotaChecker) checkAPIKeyQuota(ctx context.Context, ch *ent.C
 
 // SupportsChannel reports whether the channel is an OpenCode Go variant.
 func (c *OpenCodeGoQuotaChecker) SupportsChannel(ch *ent.Channel) bool {
-	return ch.Type == channel.TypeOpencodeGo || ch.Type == channel.TypeOpencodeGoAnthropic
+	return ch.Type == channel.TypeOpencodeGo || ch.Type == channel.TypeOpencodeGoAnthropic || ch.Type == channel.TypeOpencodeGoResponses
 }
 
 func (c *OpenCodeGoQuotaChecker) parseResponse(body []byte) (QuotaData, error) {
