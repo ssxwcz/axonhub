@@ -1,0 +1,242 @@
+name: Release (fork)
+
+# Fork-only: runs from the default branch when a version tag is created.
+# The release.yml stored on upstream-aligned tags is disabled because it
+# publishes a Homebrew formula into a tap this fork cannot write to.
+
+on:
+  create:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag (e.g. v1.0.0-rc1)'
+        required: true
+        type: string
+
+env:
+  TAG: ${{ inputs.tag || github.ref_name }}
+
+permissions:
+  contents: write
+  packages: write
+  actions: read
+
+jobs:
+  # One frontend build for the server archives and every desktop installer.
+  # Uploading the artifact is the only step that needs actions: write.
+  frontend:
+    name: Frontend
+    if: ${{ inputs.tag != '' || (github.ref_type == 'tag' && startsWith(github.ref_name, 'v')) }}
+    permissions:
+      contents: read
+      actions: write
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          package_json_file: frontend/package.json
+          run_install: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+        working-directory: frontend
+
+      - name: Build frontend
+        run: make build-frontend
+
+      - name: Check the frontend build
+        run: test -f internal/server/static/dist/index.html
+
+      - name: Upload the frontend build
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-dist
+          path: internal/server/static/dist/
+          if-no-files-found: error
+          retention-days: 1
+
+  goreleaser:
+    needs: frontend
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version: stable
+          cache: true
+
+      - name: Verify production dependency graphs
+        run: |
+          ./scripts/verify-go-sse-dependency-test.sh
+          ./scripts/verify-go-sse-dependency.sh
+
+      - name: Update VERSION file
+        if: ${{ !contains(env.TAG, 'beta') && !contains(env.TAG, 'rc') }}
+        run: |
+          VERSION="${GITHUB_REF#refs/tags/}"
+          echo "Updating VERSION file to: $VERSION"
+          echo "$VERSION" > internal/build/VERSION
+          git add internal/build/VERSION
+
+      - name: Commit VERSION file
+        if: ${{ !contains(env.TAG, 'beta') && !contains(env.TAG, 'rc') }}
+        continue-on-error: true
+        run: |
+          # Configure git
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          
+          # Check if VERSION files have changes
+          if git diff --cached --quiet VERSION internal/build/VERSION; then
+            echo "No changes to VERSION files"
+          else
+            # Commit VERSION files with [skip ci] to avoid triggering other workflows
+            git commit -m "chore: update VERSION to ${GITHUB_REF#refs/tags/} [skip ci]"
+            git push origin HEAD:${{ github.event.repository.default_branch }}
+          fi
+
+      - name: Download the frontend build
+        uses: actions/download-artifact@v4
+        with:
+          name: frontend-dist
+          path: internal/server/static/dist
+
+      - name: Check the frontend build
+        run: test -f internal/server/static/dist/index.html
+
+      # goreleaser keeps releases as drafts (release.draft: true) so that a failed
+      # run never exposes a half-published release. Re-tagging the same version (e.g.
+      # moving v1.0.0-beta10 to the refreshed unstable tip) reuses the release left by
+      # the previous run, whose assets are still attached, and every upload then fails
+      # with 422 already_exists. Drop every release attached to this tag first — draft
+      # or published — so goreleaser rebuilds changelog and assets from scratch.
+      - name: Remove stale releases for this tag
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          TAG: ${{ env.TAG }}
+        run: |
+          set -euo pipefail
+          ids=$(gh api "repos/$REPO/releases?per_page=100" \
+                --jq ".[] | select(.tag_name == \"$TAG\") | .id")
+          if [ -z "$ids" ]; then
+            echo "No stale release for $TAG"
+            exit 0
+          fi
+          for id in $ids; do
+            echo "Deleting stale release $id for $TAG"
+            gh api -X DELETE "repos/$REPO/releases/$id"
+          done
+
+      # goreleaser derives the changelog from the previous tag *reachable* from the
+      # current one (git describe semantics). This fork re-syncs upstream with
+      # `git rebase`, which rewrites unstable and orphans older tags, so goreleaser
+      # finds no reachable previous tag and falls back to the whole repository
+      # history. Pin the previous tag to the newest published release instead;
+      # `git log A..B` still works when A is not an ancestor of B.
+      - name: Resolve previous release tag
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CURRENT: ${{ env.TAG }}
+        run: |
+          set -euo pipefail
+          prev=$(gh release list --exclude-drafts --limit 200 --json tagName \
+                 --jq '.[].tagName' \
+                 | awk -v cur="$CURRENT" '$0 != cur' \
+                 | sort -V | tail -n1)
+          if [ -n "$prev" ]; then
+            echo "Changelog will span $prev..$CURRENT"
+            echo "GORELEASER_PREVIOUS_TAG=$prev" >> "$GITHUB_ENV"
+          else
+            echo "No published release found; goreleaser will use its default"
+          fi
+
+      # The tagged commit carries the upstream .goreleaser.yml, whose brews
+      # section pushes a formula into a tap this fork cannot write to. Build
+      # with the fork config from the default branch instead.
+      - name: Use the fork GoReleaser config
+        run: |
+          git fetch origin "${{ github.event.repository.default_branch }}"
+          git show FETCH_HEAD:.goreleaser.yml > .goreleaser.yml
+
+      - name: Run GoReleaser
+        uses: goreleaser/goreleaser-action@v7
+        with:
+          distribution: goreleaser
+          version: '~> v2'
+          args: release --clean --skip=validate
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HOMEBREW_TAP_GITHUB_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN || secrets.GITHUB_TOKEN }}
+          SKIP_FRONTEND_BUILD: "1"
+
+  # Older tags predate the desktop module, so only build it when present.
+  has-desktop:
+    name: Check desktop module
+    runs-on: ubuntu-latest
+    outputs:
+      exists: ${{ steps.check.outputs.exists }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+      - name: Check
+        id: check
+        run: |
+          if [ -f cmd/axonhub-desktop/go.mod ]; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  # Same tag as the server release above. Desktop waits so its installers
+  # upload onto the draft GoReleaser opened, at internal/build/VERSION.
+  # It reuses the frontend artifact instead of building it again.
+  desktop:
+    needs: [frontend, goreleaser, has-desktop]
+    if: ${{ needs.has-desktop.outputs.exists == 'true' }}
+    uses: ./.github/workflows/desktop-release.yml
+    secrets: inherit
+    with:
+      tag: ${{ inputs.tag || github.ref_name }}
+      frontend_artifact: frontend-dist
+
+  # Fork keeps releases published automatically: wait for the desktop installers
+  # to land on the draft GoReleaser opened, then flip the release live.
+  publish:
+    name: Publish release
+    needs: [goreleaser, desktop]
+    if: ${{ !cancelled() && needs.goreleaser.result == 'success' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          TAG: ${{ env.TAG }}
+        run: |
+          set -euo pipefail
+          gh release edit "$TAG" --repo "$REPO" --draft=false
+          echo "Published $TAG"
