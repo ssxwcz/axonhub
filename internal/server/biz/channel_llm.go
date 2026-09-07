@@ -194,6 +194,13 @@ func getAPIKeyProvider(ch *Channel) (auth.APIKeyProvider, error) {
 	return nil, fmt.Errorf("no enabled api key configured for channel %s", ch.Name)
 }
 
+// isOpencodeGoChannelType reports whether the channel type is one of the
+// dedicated OpenCode Go channels. All outbound surfaces of these channels
+// (primary and per-endpoint) must carry the OpenCode session header.
+func isOpencodeGoChannelType(t channel.Type) bool {
+	return t == channel.TypeOpencodeGo || t == channel.TypeOpencodeGoAnthropic || t == channel.TypeOpencodeGoResponses
+}
+
 // BuildOutboundByAPIFormat returns the outbound transformer for a resolved endpoint API format.
 // If the channel does not support the format, returns an error.
 func BuildOutboundByAPIFormat(ch *Channel, apiFormat string) (transformer.Outbound, error) {
@@ -253,6 +260,9 @@ func (svc *ChannelService) buildChannelWithOutbounds(c *ent.Channel, apiKeyOverr
 		if err != nil {
 			return nil, fmt.Errorf("failed to build default outbound for api_format %q on channel %s: %w", ep.APIFormat, c.Name, err)
 		}
+		if isOpencodeGoChannelType(c.Type) {
+			out = opencode.WithSessionHeader(out)
+		}
 		outbounds[ep.APIFormat] = out
 	}
 
@@ -264,7 +274,7 @@ func (svc *ChannelService) buildChannelWithOutbounds(c *ent.Channel, apiKeyOverr
 		if err != nil {
 			return nil, fmt.Errorf("failed to build outbound for api_format %q on channel %s: %w", ep.APIFormat, c.Name, err)
 		}
-		if c.Type == channel.TypeOpencodeGo || c.Type == channel.TypeOpencodeGoAnthropic {
+		if isOpencodeGoChannelType(c.Type) {
 			out = opencode.WithSessionHeader(out)
 		}
 		outbounds[ep.APIFormat] = out
@@ -1408,7 +1418,8 @@ func (svc *ChannelService) buildChannelWithTransformer(c *ent.Channel, apiKeyOve
 		if err != nil {
 			return nil, err
 		}
-		transformer, err := opencode.NewOutboundTransformerWithConfig(&opencode.Config{
+		transformer, err := openai.NewOutboundTransformerWithConfig(&openai.Config{
+			PlatformType:   openai.PlatformOpenAI,
 			BaseURL:        c.BaseURL,
 			APIKeyProvider: apiKeyProvider,
 		})
@@ -1416,7 +1427,23 @@ func (svc *ChannelService) buildChannelWithTransformer(c *ent.Channel, apiKeyOve
 			return nil, fmt.Errorf("failed to create outbound transformer: %w", err)
 		}
 
-		ch.Outbound = transformer
+		ch.Outbound = opencode.WithSessionHeader(transformer)
+
+		return ch, nil
+	case channel.TypeOpencodeGoResponses:
+		apiKeyProvider, err := getAPIKeyProvider(ch)
+		if err != nil {
+			return nil, err
+		}
+		transformer, err := responses.NewOutboundTransformerWithConfig(&responses.Config{
+			BaseURL:        c.BaseURL,
+			APIKeyProvider: apiKeyProvider,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to create outbound transformer: %w", err)
+		}
+
+		ch.Outbound = opencode.WithSessionHeader(transformer)
 
 		return ch, nil
 	case channel.TypeCommandcode:
