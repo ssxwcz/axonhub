@@ -26,7 +26,6 @@ import (
 	"github.com/looplj/axonhub/llm/transformer/openai"
 	"github.com/looplj/axonhub/llm/transformer/openai/copilot"
 	"github.com/looplj/axonhub/llm/transformer/openai/responses"
-	"github.com/looplj/axonhub/llm/transformer/opencode"
 	"github.com/looplj/axonhub/llm/transformer/openrouter"
 	"github.com/looplj/axonhub/llm/transformer/xai"
 	"github.com/looplj/axonhub/llm/transformer/zai"
@@ -67,8 +66,6 @@ func TestChatNamespaceRoundTrip(t *testing.T) {
 		{name: "modelscope", factory: modelscope.NewOutboundTransformer},
 		{name: "moonshot", factory: moonshot.NewOutboundTransformer},
 		{name: "nanogpt", factory: nanogpt.NewOutboundTransformer},
-		{name: "opencode_chat", factory: opencode.NewOutboundTransformer},
-		{name: "opencode_deepseek", model: "deepseek-v4-flash", factory: opencode.NewOutboundTransformer},
 		{name: "openrouter", factory: openrouter.NewOutboundTransformer},
 		{name: "xai", factory: xai.NewOutboundTransformer},
 		{name: "zai", factory: zai.NewOutboundTransformer},
