@@ -104,6 +104,10 @@ function isOpenaiType(t: string): t is 'openai' | 'openai_responses' {
   return t === 'openai' || t === 'openai_responses';
 }
 
+function isOpenCodeGoType(t: string): t is 'opencode_go' | 'opencode_go_anthropic' | 'opencode_go_responses' {
+  return t === 'opencode_go' || t === 'opencode_go_anthropic' || t === 'opencode_go_responses';
+}
+
 function isCommandCodeType(t: string): t is 'commandcode' | 'commandcode_anthropic' {
   return t === 'commandcode' || t === 'commandcode_anthropic';
 }
@@ -201,7 +205,7 @@ function getChannelPercentage(channel: ProviderQuotaChannel): number {
     if (qd.windows?.dailyInputTokens) maxPercent = Math.max(maxPercent, (qd.windows.dailyInputTokens.percentUsed ?? 0) * 100);
     if (qd.windows?.dailyImages) maxPercent = Math.max(maxPercent, (qd.windows.dailyImages.percentUsed ?? 0) * 100);
     percentage = maxPercent;
-  } else if (channel.type === 'opencode_go' || channel.type === 'opencode_go_anthropic') {
+  } else if (isOpenCodeGoType(channel.type)) {
     percentage = Math.max(0, ...channel.quotaStatus.limits.map((limit) => limit.usageRatio * 100));
   } else if (isOllamaType(channel.type)) {
     const qd = channel.quotaStatus.quotaData as ProviderOllamaQuotaData | undefined;
