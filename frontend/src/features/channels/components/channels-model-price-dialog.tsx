@@ -954,8 +954,8 @@ export function ChannelsModelPriceDialog() {
                       itemCode: item.itemCode as PriceItemCode,
                       pricing: {
                         mode: item.pricing.mode as PricingMode,
-                        flatFee: item.pricing.flatFee || null,
-                        usagePerUnit: item.pricing.usagePerUnit || null,
+                        flatFee: trimPriceValue(item.pricing.flatFee),
+                        usagePerUnit: trimPriceValue(item.pricing.usagePerUnit),
                         usageTiered: item.pricing.usageTiered
                           ? {
                               tiers: item.pricing.usageTiered.tiers.map((t) => ({
