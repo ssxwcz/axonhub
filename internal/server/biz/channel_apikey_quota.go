@@ -49,7 +49,7 @@ var errQuotaKeySnapshotStale = errors.New("channel identity changed while the qu
 // accounts.
 func quotaKeyProviderType(ch *ent.Channel) (string, bool) {
 	switch ch.Type { //nolint:exhaustive // Every other channel type is not a per-key quota provider.
-	case channel.TypeOpencodeGo, channel.TypeOpencodeGoAnthropic:
+	case channel.TypeOpencodeGo, channel.TypeOpencodeGoAnthropic, channel.TypeOpencodeGoResponses:
 		return "opencode_go", true
 	case channel.TypeZhipu, channel.TypeZhipuAnthropic:
 		return "zhipu", true

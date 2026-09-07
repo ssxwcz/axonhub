@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/looplj/axonhub/internal/ent"
@@ -14,11 +15,32 @@ import (
 
 const (
 	opencodeGoProviderType = "opencode_go"
-	opencodeGoUsageURL     = "https://opencode.ai/zen/go/v1/usage"
+
+	// opencodeGoBaseURL is the Go gateway documented URLs are served from.
+	// The legacy /zen/go prefix still answers, so a channel saved before the
+	// move keeps working and only its usage endpoint is derived from it.
+	opencodeGoBaseURL = "https://opencode.ai/inference/go"
 )
 
+// opencodeGoUsageURL derives the usage endpoint from the channel base URL so a
+// gateway fronted by a relay, or a channel still on the legacy /zen/go prefix,
+// is queried where it actually points. The usage API lives beside the model
+// API at <base>/v1/usage.
+func opencodeGoUsageURL(ch *ent.Channel) string {
+	base := ""
+	if ch != nil {
+		base = strings.TrimSpace(ch.BaseURL)
+	}
+
+	if base == "" {
+		return opencodeGoBaseURL + "/v1/usage"
+	}
+
+	return strings.TrimRight(base, "/") + "/v1/usage"
+}
+
 // opencodeGoUsageResponse matches the OpenCode Go usage API response:
-// GET /zen/go/v1/usage with Authorization: Bearer <api key>.
+// GET <base>/v1/usage with Authorization: Bearer <api key>.
 type opencodeGoUsageResponse struct {
 	Usage opencodeGoUsageWindows `json:"usage"`
 }
@@ -74,7 +96,7 @@ func (c *OpenCodeGoQuotaChecker) CheckQuota(ctx context.Context, ch *ent.Channel
 func (c *OpenCodeGoQuotaChecker) checkAPIKeyQuota(ctx context.Context, ch *ent.Channel, apiKey string) (QuotaData, error) {
 	request := httpclient.NewRequestBuilder().
 		WithMethod(http.MethodGet).
-		WithURL(opencodeGoUsageURL).
+		WithURL(opencodeGoUsageURL(ch)).
 		WithHeader("Authorization", "Bearer "+apiKey).
 		WithHeader("Accept", "application/json").
 		Build()
@@ -94,7 +116,7 @@ func (c *OpenCodeGoQuotaChecker) checkAPIKeyQuota(ctx context.Context, ch *ent.C
 
 // SupportsChannel reports whether the channel is an OpenCode Go variant.
 func (c *OpenCodeGoQuotaChecker) SupportsChannel(ch *ent.Channel) bool {
-	return ch.Type == channel.TypeOpencodeGo || ch.Type == channel.TypeOpencodeGoAnthropic
+	return ch.Type == channel.TypeOpencodeGo || ch.Type == channel.TypeOpencodeGoAnthropic || ch.Type == channel.TypeOpencodeGoResponses
 }
 
 func (c *OpenCodeGoQuotaChecker) parseResponse(body []byte) (QuotaData, error) {

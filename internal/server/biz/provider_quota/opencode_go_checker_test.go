@@ -21,7 +21,7 @@ func TestOpenCodeGo_CheckQuota_Success(t *testing.T) {
 	httpClient := httpclient.NewHttpClientWithClient(&http.Client{
 		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
 			require.Equal(t, http.MethodGet, req.Method)
-			require.Equal(t, "https://opencode.ai/zen/go/v1/usage", req.URL.String())
+			require.Equal(t, "https://opencode.ai/inference/go/v1/usage", req.URL.String())
 			require.Equal(t, "Bearer test-key", req.Header.Get("Authorization"))
 			require.Equal(t, "application/json", req.Header.Get("Accept"))
 
@@ -407,5 +407,47 @@ func TestOpenCodeGo_SupportsChannel(t *testing.T) {
 
 	require.True(t, checker.SupportsChannel(&ent.Channel{Type: channel.TypeOpencodeGo}))
 	require.True(t, checker.SupportsChannel(&ent.Channel{Type: channel.TypeOpencodeGoAnthropic}))
+	require.True(t, checker.SupportsChannel(&ent.Channel{Type: channel.TypeOpencodeGoResponses}))
 	require.False(t, checker.SupportsChannel(&ent.Channel{Type: channel.TypeOpenai}))
+}
+
+// A channel moved to the current Go gateway, or one fronted by a relay, must
+// have its usage read where the channel points rather than at a fixed host.
+func TestOpenCodeGo_CheckQuota_UsesChannelBaseURL(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		baseURL string
+		want    string
+	}{
+		{"current gateway", "https://opencode.ai/inference/go", "https://opencode.ai/inference/go/v1/usage"},
+		{"legacy gateway", "https://opencode.ai/zen/go", "https://opencode.ai/zen/go/v1/usage"},
+		{"trailing slash", "https://opencode.ai/inference/go/", "https://opencode.ai/inference/go/v1/usage"},
+		{"relay", "https://relay.example.com/opencode", "https://relay.example.com/opencode/v1/usage"},
+		{"empty base falls back to the documented host", "", "https://opencode.ai/inference/go/v1/usage"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var gotURL string
+			httpClient := httpclient.NewHttpClientWithClient(&http.Client{
+				Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+					gotURL = req.URL.String()
+					return &http.Response{
+						StatusCode: http.StatusOK,
+						Body:       io.NopCloser(strings.NewReader(`{"usage":{"rolling":{"percent":5,"resetsAt":"2099-06-25T15:00:00Z"}}}`)),
+						Header:     make(http.Header),
+					}, nil
+				}),
+			})
+
+			checker := NewOpenCodeGoQuotaChecker(httpClient)
+			checker.now = func() time.Time { return time.Date(2099, 6, 25, 10, 0, 0, 0, time.UTC) }
+
+			_, err := checker.CheckQuota(context.Background(), &ent.Channel{
+				Type:        channel.TypeOpencodeGoResponses,
+				BaseURL:     tc.baseURL,
+				Credentials: objects.ChannelCredentials{APIKey: "test-key"},
+			})
+			require.NoError(t, err)
+			require.Equal(t, tc.want, gotURL)
+		})
+	}
 }
