@@ -81,3 +81,4 @@ All detailed rules are in `.agent/rules/`:
 | [e2e.md](.agent/rules/e2e.md) | `frontend/tests/**/*.ts` | E2E testing rules |
 | [docs.md](.agent/rules/docs.md) | `docs/**/*.md` | Documentation rules |
 | [workflows/add-channel.md](.agent/rules/workflows/add-channel.md) | Manual | Workflow for adding a new channel |
+| [workflows/merge-upstream-prs.md](.agent/rules/workflows/merge-upstream-prs.md) | Manual | Fork maintenance: sync upstream, own changes on unstable, commit format |
