@@ -123,3 +123,4 @@ All detailed rules are in `.agents/rules/`:
 | [e2e.md](.agents/rules/e2e.md) | `frontend/tests/**/*.ts` | E2E testing rules |
 | [docs.md](.agents/rules/docs.md) | `docs/**/*.md` | Documentation rules |
 | [workflows/add-channel.md](.agents/rules/workflows/add-channel.md) | Manual | Workflow for adding a new channel |
+| [workflows/sync-upstream.md](.agents/rules/workflows/sync-upstream.md) | Manual | Fork maintenance: sync upstream, own changes on unstable, commit format |

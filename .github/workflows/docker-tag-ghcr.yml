@@ -1,0 +1,70 @@
+# Fork-only: publish a GHCR image whenever a version tag is created.
+#
+# A tag-driven push runs the workflow stored in the tagged commit. Tags are
+# kept aligned with upstream, so their docker-publish.yml is the upstream one
+# (Docker Hub) and the fork's GHCR settings never apply there. This workflow
+# lives on the default branch and runs on the tag `create` event instead, so
+# every version tag gets a GHCR image regardless of what the tag points at.
+
+name: Publish Docker image (GHCR on tag)
+
+on:
+  create:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag (e.g. v1.0.0-rc1)'
+        required: true
+        type: string
+
+env:
+  TAG: ${{ inputs.tag || github.ref_name }}
+
+jobs:
+  build_single_arch:
+    name: Build & push (release)
+    if: ${{ inputs.tag != '' || (github.ref_type == 'tag' && startsWith(github.ref_name, 'v')) }}
+    uses: ./.github/workflows/docker-build.yml
+    with:
+      mode: release
+      ref: ${{ inputs.tag || github.ref_name }}
+      tag: ${{ inputs.tag || github.ref_name }}
+    permissions:
+      contents: read
+      packages: write
+    secrets:
+      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+      DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+
+  create_manifests:
+    name: Create multi-arch manifests (GHCR)
+    needs: [build_single_arch]
+    if: ${{ inputs.tag != '' || (github.ref_type == 'tag' && startsWith(github.ref_name, 'v')) }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Extract tag
+        run: echo "TAG=${{ env.TAG }}" >> "$GITHUB_ENV"
+
+      - name: Log in to GHCR
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create & push manifest (GHCR - version)
+        run: |
+          docker buildx imagetools create \
+            -t ghcr.io/${{ github.repository_owner }}/axonhub:${TAG} \
+            ghcr.io/${{ github.repository_owner }}/axonhub:${TAG}-amd64 \
+            ghcr.io/${{ github.repository_owner }}/axonhub:${TAG}-arm64
+
+      - name: Create & push manifest (GHCR - latest)
+        run: |
+          docker buildx imagetools create \
+            -t ghcr.io/${{ github.repository_owner }}/axonhub:latest \
+            ghcr.io/${{ github.repository_owner }}/axonhub:latest-amd64 \
+            ghcr.io/${{ github.repository_owner }}/axonhub:latest-arm64

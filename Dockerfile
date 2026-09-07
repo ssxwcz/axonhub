@@ -32,7 +32,8 @@ COPY --from=frontend-dist /dist /build/internal/server/static/dist
 
 ENV GO111MODULE=on \
     CGO_ENABLED=0 \
-    GOOS=linux
+    GOOS=linux \
+    GOTOOLCHAIN=auto
 
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
