@@ -181,3 +181,9 @@ docs/superpowers/**
 superpowers/
 superpowers/**
 build/**
+
+# CodeGraph local index
+.codegraph/
+
+# cortexkit / magic-context local data
+.cortexkit/

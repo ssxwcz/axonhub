@@ -4,6 +4,11 @@ on:
   push:
     tags:
       - 'v*'
+  # A tag pushed onto an upstream-aligned commit runs the workflow stored in
+  # that commit (the upstream one, which needs Docker Hub and Homebrew
+  # credentials). This event runs from the default branch instead, so the
+  # fork's own release flow applies to every version tag.
+  create:
 
 permissions:
   contents: write
@@ -15,6 +20,7 @@ jobs:
   # Uploading the artifact is the only step that needs actions: write.
   frontend:
     name: Frontend
+    if: github.ref_type == 'tag' && startsWith(github.ref_name, 'v')
     permissions:
       contents: read
       actions: write
@@ -108,6 +114,61 @@ jobs:
       - name: Check the frontend build
         run: test -f internal/server/static/dist/index.html
 
+      # goreleaser keeps releases as drafts (release.draft: true) so that a failed
+      # run never exposes a half-published release. Re-tagging the same version (e.g.
+      # moving v1.0.0-beta10 to the refreshed unstable tip) reuses the release left by
+      # the previous run, whose assets are still attached, and every upload then fails
+      # with 422 already_exists. Drop every release attached to this tag first — draft
+      # or published — so goreleaser rebuilds changelog and assets from scratch.
+      - name: Remove stale releases for this tag
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          ids=$(gh api "repos/$REPO/releases?per_page=100" \
+                --jq ".[] | select(.tag_name == \"$TAG\") | .id")
+          if [ -z "$ids" ]; then
+            echo "No stale release for $TAG"
+            exit 0
+          fi
+          for id in $ids; do
+            echo "Deleting stale release $id for $TAG"
+            gh api -X DELETE "repos/$REPO/releases/$id"
+          done
+
+      # goreleaser derives the changelog from the previous tag *reachable* from the
+      # current one (git describe semantics). This fork re-syncs upstream with
+      # `git rebase`, which rewrites unstable and orphans older tags, so goreleaser
+      # finds no reachable previous tag and falls back to the whole repository
+      # history. Pin the previous tag to the newest published release instead;
+      # `git log A..B` still works when A is not an ancestor of B.
+      - name: Resolve previous release tag
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CURRENT: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          prev=$(gh release list --exclude-drafts --limit 200 --json tagName \
+                 --jq '.[].tagName' \
+                 | awk -v cur="$CURRENT" '$0 != cur' \
+                 | sort -V | tail -n1)
+          if [ -n "$prev" ]; then
+            echo "Changelog will span $prev..$CURRENT"
+            echo "GORELEASER_PREVIOUS_TAG=$prev" >> "$GITHUB_ENV"
+          else
+            echo "No published release found; goreleaser will use its default"
+          fi
+
+      # The tagged commit carries the upstream .goreleaser.yml, whose brews
+      # section pushes a formula into a tap this fork cannot write to. Build
+      # with the fork config from the default branch instead.
+      - name: Use the fork GoReleaser config
+        run: |
+          git fetch --depth=1 origin "${{ github.event.repository.default_branch }}"
+          git show FETCH_HEAD:.goreleaser.yml > .goreleaser.yml
+
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@v7
         with:
@@ -129,3 +190,22 @@ jobs:
     with:
       tag: ${{ github.ref_name }}
       frontend-artifact: frontend-dist
+
+  # Fork keeps releases published automatically: wait for the desktop installers
+  # to land on the draft GoReleaser opened, then flip the release live.
+  publish:
+    name: Publish release
+    needs: [goreleaser, desktop]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          gh release edit "$TAG" --repo "$REPO" --draft=false
+          echo "Published $TAG"
