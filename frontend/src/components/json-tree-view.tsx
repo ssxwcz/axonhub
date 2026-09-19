@@ -244,6 +244,9 @@ function getSiblingString(parentData: any, keys: string[]): string | undefined {
   return undefined;
 }
 
+/** Strings longer than this are truncated while collapsed to keep large base64 bodies out of the DOM. */
+const LONG_STRING_LIMIT = 2000;
+
 function detectImageSource(name: string, value: string, parentData?: any): string | null {
   const trimmed = value.trim();
   if (dataUrlImagePattern.test(trimmed)) {
@@ -336,7 +339,8 @@ function JsonValue({ name, data, parentData }: { name: string; data: any; parent
 
   switch (dataType) {
     case 'string': {
-      const normalized = normalizeMultilineForDisplay(data);
+      const isLongCollapsed = !isExpanded && data.length > LONG_STRING_LIMIT;
+      const normalized = normalizeMultilineForDisplay(isLongCollapsed ? data.slice(0, LONG_STRING_LIMIT) : data);
       const parsedJson = tryParseJson(data);
       const imageSource = detectImageSource(name, data, parentData);
 
@@ -419,11 +423,11 @@ function JsonValue({ name, data, parentData }: { name: string; data: any; parent
                     overflow: 'hidden',
                     textOverflow: 'ellipsis',
                   }}
-                >{`"${normalized}"`}</span>
+                >{`"${normalized}${isLongCollapsed ? '…' : ''}"`}</span>
               </TooltipTrigger>
               <TooltipContent side='bottom' className='max-w-md p-2 text-xs break-words'>
                 <span className='whitespace-pre-wrap'>
-                  {`"${normalized.substring(0, 300)}${normalized.length > 300 ? '…' : ''}"`}
+                  {`"${normalized.substring(0, 300)}${normalized.length > 300 || isLongCollapsed ? '…' : ''}"`}
                 </span>
               </TooltipContent>
             </Tooltip>
