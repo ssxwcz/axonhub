@@ -8,6 +8,7 @@ import { Streamdown } from 'streamdown';
 import { cn } from '@/lib/utils';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Shimmer } from './shimmer';
+import { markdownRehypePlugins } from './markdown-plugins';
 
 type ReasoningContextValue = {
   isStreaming: boolean;
@@ -144,7 +145,7 @@ export const ReasoningContent = memo(({ className, children, ...props }: Reasoni
     )}
     {...props}
   >
-    <Streamdown shikiTheme={['one-light', 'one-dark-pro']} {...props}>{children}</Streamdown>
+    <Streamdown shikiTheme={['one-light', 'one-dark-pro']} rehypePlugins={markdownRehypePlugins} {...props}>{children}</Streamdown>
   </CollapsibleContent>
 ));
 
