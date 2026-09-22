@@ -217,6 +217,9 @@ function tryParseJson(str: string): any {
 }
 
 const dataUrlImagePattern = /^data:image\/[a-z0-9.+-]+;base64,[a-z0-9+/=\s]+$/i;
+// Markdown-wrapped image, e.g. `![image](data:image/jpeg;base64,...)` — Gemini
+// and similar providers return generated images this way inside message content.
+const markdownImagePattern = /!\[[^\]]*\]\(\s*(data:image\/[a-z0-9.+-]+;base64,[a-z0-9+/=\s]+?)\s*\)/i;
 const bareBase64Pattern = /^[a-z0-9+/]+={0,2}$/i;
 const imageMimePattern = /^image\/(?!svg\+xml)[a-z0-9.+-]+$/i;
 
@@ -246,10 +249,16 @@ function getSiblingString(parentData: any, keys: string[]): string | undefined {
 
 function detectImageSource(name: string, value: string, parentData?: any): string | null {
   const trimmed = value.trim();
-  if (dataUrlImagePattern.test(trimmed)) {
-    if (/svg\+xml/i.test(trimmed)) return null;
-    return trimmed.replace(/\s/g, '');
+  // If the value is markdown wrapping a data URL, preview the embedded image.
+  const markdownMatch = markdownImagePattern.exec(trimmed);
+  const candidate = markdownMatch ? markdownMatch[1] : trimmed;
+
+  if (dataUrlImagePattern.test(candidate)) {
+    if (/svg\+xml/i.test(candidate)) return null;
+    return candidate.replace(/\s/g, '');
   }
+
+  if (markdownMatch) return null;
 
   const siblingMediaType = getSiblingString(parentData, ['media_type', 'mediaType', 'mime_type', 'mimeType']);
   const normalizedName = name.toLowerCase();
