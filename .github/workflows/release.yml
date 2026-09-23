@@ -71,9 +71,12 @@ jobs:
           fi
 
       # goreleaser keeps releases as drafts (release.draft: true) so that a failed
-      # run never leaves a half-published release. Re-running the same tag would
-      # otherwise pile up stale drafts, so drop any draft left for this tag first.
-      - name: Remove stale draft releases for this tag
+      # run never exposes a half-published release. Re-tagging the same version (e.g.
+      # moving v1.0.0-beta10 to the refreshed unstable tip) reuses the release left by
+      # the previous run, whose assets are still attached, and every upload then fails
+      # with 422 already_exists. Drop every release attached to this tag first — draft
+      # or published — so goreleaser rebuilds changelog and assets from scratch.
+      - name: Remove stale releases for this tag
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
@@ -81,13 +84,13 @@ jobs:
         run: |
           set -euo pipefail
           ids=$(gh api "repos/$REPO/releases?per_page=100" \
-                --jq ".[] | select(.draft == true and .tag_name == \"$TAG\") | .id")
+                --jq ".[] | select(.tag_name == \"$TAG\") | .id")
           if [ -z "$ids" ]; then
-            echo "No stale draft for $TAG"
+            echo "No stale release for $TAG"
             exit 0
           fi
           for id in $ids; do
-            echo "Deleting stale draft release $id for $TAG"
+            echo "Deleting stale release $id for $TAG"
             gh api -X DELETE "repos/$REPO/releases/$id"
           done
 
