@@ -650,6 +650,7 @@ const syntheticHelperNames = [
   'isOllamaType',
   'isMinimaxType',
   'isZenmuxType',
+  'isOpenCodeGoType',
   'getClineUsagePercent',
   'getApertisPercentage',
   'getChannelPercentage',
