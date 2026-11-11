@@ -815,6 +815,7 @@ test('Synthetic badge lists the hourly search quota without gating', () => {
 // the actual percentage / reset / regen-tick logic.
 const syntheticHelperNames = [
   'isOpenaiType',
+  'isOpenCodeGoType',
   'isCommandCodeType',
   'isOllamaType',
   'isMinimaxType',
