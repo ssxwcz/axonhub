@@ -118,14 +118,7 @@ def download_section(repo: str, tag: str, names: list[str]) -> str:
         "amd64 / arm64",
         "2496ED",
         "docker",
-        f"https://hub.docker.com/r/{repo}",
-    )
-    brew = badge(
-        "Homebrew",
-        "macOS",
-        "FBB040",
-        "homebrew",
-        "https://github.com/looplj/homebrew-axonhub",
+        f"https://github.com/{repo}/pkgs/container/axonhub",
     )
     parts = [
         "## 按系统下载 | Download",
@@ -150,7 +143,7 @@ def download_section(repo: str, tag: str, names: list[str]) -> str:
         [
             "### Server",
             "",
-            table(repo, tag, server, [("Docker", docker), ("Homebrew", brew)]),
+            table(repo, tag, server, [("Docker", docker)]),
             "",
         ]
     )
