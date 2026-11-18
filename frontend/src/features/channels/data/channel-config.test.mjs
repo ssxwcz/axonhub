@@ -172,8 +172,8 @@ test('OpenCode Go exposes an OpenAI Responses channel variant', () => {
   );
   assert.match(
     channelsConfig,
-    /opencode_go_responses:\s*{[\s\S]*baseURL:\s*'https:\/\/opencode\.ai\/zen\/go'[\s\S]*apiFormat:\s*OPENAI_RESPONSES/,
-    'OpenCode Go Responses should use the zen/go base URL and Responses format'
+    /opencode_go_responses:\s*{[\s\S]*baseURL:\s*'https:\/\/opencode\.ai\/inference\/go'[\s\S]*apiFormat:\s*OPENAI_RESPONSES/,
+    'OpenCode Go Responses should use the inference/go base URL and Responses format'
   );
   assert.match(
     channelsConfig,

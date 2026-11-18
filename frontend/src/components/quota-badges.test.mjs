@@ -183,6 +183,7 @@ const modeHelperNames = [
   'readStoredSortMode',
   'writeStoredPreference',
   'isOpenaiType',
+  'isOpenCodeGoType',
   'isCommandCodeType',
   'isOllamaType',
   'isMinimaxType',
@@ -191,7 +192,7 @@ const modeHelperNames = [
   'buildQuotaDisplayItems',
 ];
 const modeHelperNodes = badgesAst.statements.filter((node) => ts.isFunctionDeclaration(node) && modeHelperNames.includes(node.name?.text));
-assert.equal(modeHelperNodes.length, 16, 'helpers must stay in quota-badges.tsx');
+assert.equal(modeHelperNodes.length, 17, 'helpers must stay in quota-badges.tsx');
 // The active-category resolver reads this module constant, so the extracted
 // module needs it too.
 const helperConstNames = ['WIDE_QUOTA_POPOVER_CHANNEL_COUNT'];
@@ -585,6 +586,7 @@ test('channel categories order alphabetically and sort stably by name within gro
   assert.equal(getChannelCategory({ type: 'openai_responses' }, t).key, 'openai');
   assert.equal(getChannelCategory({ type: 'opencode_go' }, t).key, 'opencode_go');
   assert.equal(getChannelCategory({ type: 'opencode_go_anthropic' }, t).key, 'opencode_go');
+  assert.equal(getChannelCategory({ type: 'opencode_go_responses' }, t).key, 'opencode_go');
 
   // Active category falls back to all when category disappears
   const activeCategories = [{ key: 'antigravity' }];
@@ -1248,9 +1250,12 @@ const affectedQuotaBranches = quotaJsx.children.filter((node) => {
   const condition = node.expression.left.getText(badgesAst);
   return (
     /quota\.apiKeyQuotas\.length > \d/.test(condition) ||
-    ["channel.type === 'opencode_go'", "channel.type === 'zhipu'", "channel.type === 'deepseek'"].some((provider) =>
-      condition.includes(provider)
-    )
+    [
+      "channel.type === 'opencode_go'",
+      'isOpenCodeGoType(channel.type)',
+      "channel.type === 'zhipu'",
+      "channel.type === 'deepseek'",
+    ].some((provider) => condition.includes(provider))
   );
 });
 assert.equal(affectedQuotaBranches.length, 4);
@@ -1270,6 +1275,7 @@ const apiKeyRenderModule = [
   statusLabelsNode.getText(badgesAst),
   windowLabelKeysDecl.getText(badgesAst),
   syntheticFuncNodes.find((node) => node.name.text === 'isOpenaiType').getText(badgesAst),
+  syntheticFuncNodes.find((node) => node.name.text === 'isOpenCodeGoType').getText(badgesAst),
   ...syntheticConstNodes
     .filter((node) =>
       node.declarationList.declarations.some((decl) => ['calcDurationPercent', 'formatTimeToReset'].includes(decl.name.getText(badgesAst)))
@@ -1544,6 +1550,7 @@ test('all supported channel variants use the same per-key details and short keys
   for (const type of [
     'opencode_go',
     'opencode_go_anthropic',
+    'opencode_go_responses',
     'zhipu',
     'zhipu_anthropic',
     'zai',
@@ -1563,6 +1570,21 @@ test('all supported channel variants use the same per-key details and short keys
     assert.match(details, />Key #1<\/span>/, type);
     assert.match(details, /Key #2 · \*\*\*\*same/, type);
     assert.doesNotMatch(details, /Key #1 ·/, 'a short key has no suffix to display');
+  }
+});
+
+test('the OpenCode Go Responses variant keeps its native window rows like the chat variant', () => {
+  const limits = [keyWindow('5h', 0.99), keyWindow('weekly', 0.94), keyWindow('monthly', 0.97)];
+
+  for (const type of ['opencode_go', 'opencode_go_anthropic', 'opencode_go_responses']) {
+    const html = renderKeyDetails(perKeyChannel([keyAccount(1, { limits })], { type, limits }));
+    // The OpenCode branch renders one labelled bar per window; the generic
+    // fallback would instead print the estimated-period money block.
+    assert.match(html, /5h window/, type);
+    assert.match(html, /Weekly window/, type);
+    assert.match(html, /Monthly window/, type);
+    assert.match(html, /99% used/, type);
+    assert.doesNotMatch(html, /Estimated period quota|period_quota/i, type);
   }
 });
 

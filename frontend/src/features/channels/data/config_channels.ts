@@ -778,7 +778,7 @@ export const CHANNEL_CONFIGS: Record<ChannelType, ChannelConfig> = {
   },
   opencode_go: {
     channelType: 'opencode_go',
-    baseURL: 'https://opencode.ai/zen/go',
+    baseURL: 'https://opencode.ai/inference/go',
     defaultModels: [
       'glm-5.3',
       'glm-5.2',
@@ -809,7 +809,7 @@ export const CHANNEL_CONFIGS: Record<ChannelType, ChannelConfig> = {
   },
   opencode_go_anthropic: {
     channelType: 'opencode_go_anthropic',
-    baseURL: 'https://opencode.ai/zen/go',
+    baseURL: 'https://opencode.ai/inference/go',
     defaultModels: [
       'minimax-m3',
       'minimax-m2.7',
@@ -830,7 +830,7 @@ export const CHANNEL_CONFIGS: Record<ChannelType, ChannelConfig> = {
   },
   opencode_go_responses: {
     channelType: 'opencode_go_responses',
-    baseURL: 'https://opencode.ai/zen/go',
+    baseURL: 'https://opencode.ai/inference/go',
     defaultModels: [
       'deepseek-v4-pro',
       'deepseek-v4-flash',

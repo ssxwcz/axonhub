@@ -1808,7 +1808,7 @@ function QuotaRow({
       {/* One key has nothing to compare: keep that channel's native window rows. */}
       {quota.apiKeyQuotas.length > 1 && <APIKeyQuotaList accounts={quota.apiKeyQuotas} formatTimeToReset={formatTimeToReset} />}
 
-      {quota.apiKeyQuotas.length < 2 && (channel.type === 'opencode_go' || channel.type === 'opencode_go_anthropic') && (
+      {quota.apiKeyQuotas.length < 2 && isOpenCodeGoType(channel.type) && (
         <div className='mt-3 space-y-3'>
           {(() => {
             // OpenCode Go renders from the normalized limits: its checker maps
@@ -3178,7 +3178,7 @@ function getChannelCategory(channel: ProviderQuotaChannel, t: TranslateFn): Quot
   if (isZenmuxType(channelType)) {
     return { key: 'zenmux', label: 'ZenMux' };
   }
-  if (channelType === 'opencode_go' || channelType === 'opencode_go_anthropic') {
+  if (isOpenCodeGoType(channelType)) {
     return { key: 'opencode_go', label: t('channels.types.opencode_go') || 'OpenCode Go' };
   }
   if (isOpenaiType(channelType)) {
